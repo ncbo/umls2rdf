@@ -1,0 +1,7 @@
+This project takes the MYSQL Unified Medical Language System (UMLS) database and creates a dump of it in RDF using OWL and SKOS and main vocabularies.
+
+To run it:
+    (a) Specify your database connection conf.py
+    (b) Specify the SAB ontologies to export in umls.conf.
+
+umls2rdf.py has been designed to be an off-line run-once process, it is memory intensive process and exports all the default ontologies in umls.conf in 3h 30min. The ontologies listed in umls.conf are the UMLS ontologies that can be accessed in BioPortal.
