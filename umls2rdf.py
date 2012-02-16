@@ -311,6 +311,7 @@ class UmlsOntology(object):
         self.ont_code = ont_code
         self.ns = ns
         self.load_on_cuis = load_on_cuis
+        self.alt_uri_code = alt_uri_code
         
         self.atoms = list()
         self.atoms_by_code = collections.defaultdict(lambda : list())
@@ -428,11 +429,15 @@ if __name__ == "__main__":
         umls_conf = [line.split(",") for line in fconf.read().splitlines() if len(line) > 0]
         fconf.close()
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
+        alt_uri_code = None
+        if ";" in umls_code:
+            umls_code,alt_uri_code = umls_code.split(";")
         if umls_code.startswith("#"):
             continue
         load_on_cuis = load_on_field == "load_on_cuis"
         print("Generating %s vrt_id %s"%(umls_code,vrt_id))
-        ont = UmlsOntology(umls_code,get_umls_url(umls_code),con,load_on_cuis=load_on_cuis)
+        ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
+        ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
         output_file = os.path.join(conf.OUTPUT_FOLDER,file_out)
         ont.load_tables(limit=None)
         print("tables loaded, writing terms ...")
