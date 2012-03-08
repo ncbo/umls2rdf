@@ -406,10 +406,14 @@ class UmlsOntology(object):
             for _id in ids:
                 rels += [self.rels[x] for x in self.rels_by_aui_src[_id]]
             rels_to_class = list()
+            is_root = False
             if self.load_on_cuis:
                 rels_to_class = rels
+                for rel in rels_to_class:
+                    if rel[MRREL_CUI1] in self.cui_roots:
+                        is_root = True
+                        break
             else:
-                is_root = False
                 for rel in rels:
                     rel_with_codes = list(rel)
                     aui_source = rel[MRREL_AUI2]
