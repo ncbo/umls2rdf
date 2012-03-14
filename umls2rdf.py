@@ -7,6 +7,7 @@ from string import Template
 import collections
 from itertools import groupby
 import urllib
+
 import conf
 
 PREFIXES = """
@@ -17,6 +18,16 @@ PREFIXES = """
 @prefix umls: <http://bioportal.bioontology.org/ontologies/umls/> .
 
 """
+
+ONTOLOGY_HEADER = Template("""
+<$uri>
+    a owl:Ontology ;
+    rdfs:comment "$comment" ;
+    rdfs:label "$label" ;
+    owl:imports <http://www.w3.org/2004/02/skos/core> ;
+    owl:versionInfo "$versioninfo" .
+""")
+
 STY_URL = "http://bioportal.bioontology.org/ontologies/umls/sty/"
 HAS_STY = "umls:hasSTY"
 HAS_CUI = "umls:cui"
@@ -101,11 +112,12 @@ def generate_semantic_types(con,url,fileout):
     mrsty = UmlsTable("MRSTY",con,load_select="SELECT DISTINCT TUI, STN, STY FROM MRSTY")
     ont = list()
     ont.append(PREFIXES)
+
     for stt in mrsty.scan():
         hierarchy[stt[1]].append(stt[0])
         sty_term = """<%s> a owl:Class;
 skos:notation "%s"^^xsd:string;
-skos:prefLabel "%s"@eng .
+skos:prefLabel "%s"@en .
 """%(url+stt[0],stt[0],stt[2])
         ont.append(sty_term)
         all_nodes.append(stt)
@@ -247,18 +259,18 @@ class UmlsClass(object):
         altLabels = self.getAltLabels(prefLabel)
 
         rdf_term = """<%s> a owl:Class;
-\tskos:prefLabel \"\"\"%s\"\"\"@eng;
+\tskos:prefLabel \"\"\"%s\"\"\"@en;
 \tskos:notation \"\"\"%s\"\"\"^^xsd:string;
 """%(url_term,escape(prefLabel),escape(term_code))
         if len(altLabels) > 0:
             rdf_term += """\tskos:altLabel %s;
-"""%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@eng'%escape(x),set(altLabels))))
+"""%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
         if self.is_root: 
-            rdf_term += "\tumls:isRoot 'true'^^xsd:boolean;\n"
+            rdf_term += '\tumls:isRoot "true"^^xsd:boolean;\n'
 
         if len(self.defs) > 0:
              rdf_term += """\tskos:definition %s;
-"""%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@eng'%escape(x[MRDEF_DEF]),set(self.defs))))
+"""%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
 
         for rel in self.rels:
             source_code = get_rel_code_source(rel,self.load_on_cuis)
@@ -445,6 +457,19 @@ class UmlsOntology(object):
         fout = file(file_path,"w")
         nterms = len(self.atoms_by_code)
         fout.write(PREFIXES)
+        comment = "RDF Version of the UMLS ontology %s; " +\
+                  "converted with the UMLS2RDF tool " +\
+                  "(https://github.com/ncbo/umls2rdf). "+\
+                  "Developed by the NCBO project."
+
+        header_values=dict(
+           label=self.ont_code,
+           comment=comment%self.ont_code,
+           versioninfo=conf.UMLS_VERSION,
+           uri=self.ns
+        )
+        header = ONTOLOGY_HEADER.substitute(header_values)
+        fout.write(header)
         for term in self.terms():
             fout.write(term.toRDF(format="Turtle",hierarchy=True))
         fout.close()
