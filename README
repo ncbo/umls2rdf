@@ -1,4 +1,4 @@
-This project takes the MYSQL Unified Medical Language System (UMLS) database dumping the ontologies in RDF triples using OWL and SKOS as main vocabularies.
+This project takes the MYSQL Unified Medical Language System (UMLS) database to convert the ontologies to RDF using OWL and SKOS as main schemas.
 
 To use it:
     (a) Specify your database connection conf.py
