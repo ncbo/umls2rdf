@@ -484,6 +484,10 @@ if __name__ == "__main__":
                         for line in fconf.read().splitlines() \
                             if len(line) > 0]
         fconf.close()
+
+    if not os.path.isdir(conf.OUTPUT_FOLDER):
+        raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
+        
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
         if ";" in umls_code:
