@@ -2,11 +2,11 @@
 
 import MySQLdb
 import os
-import pdb
+import urllib
 from string import Template
 import collections
-from itertools import groupby
-import urllib
+#import pdb
+#from itertools import groupby
 
 import conf
 
@@ -151,7 +151,7 @@ class UmlsTable(object):
             return int(record[0])
 
     def scan(self,filt=None,limit=None):
-        c = self.count()
+        #c = self.count()
         i = 0
         page = 0
         cont = True
@@ -204,14 +204,14 @@ class UmlsClass(object):
         return codes.pop()
 
     def getAltLabels(self,prefLabel):
-        is_pref_atoms =  filter(lambda x: x[MRCONSO_ISPREF] == 'Y', self.atoms)
+        #is_pref_atoms =  filter(lambda x: x[MRCONSO_ISPREF] == 'Y', self.atoms)
         return set([atom[MRCONSO_STR] for atom in self.atoms if atom[MRCONSO_STR] <> prefLabel])
         
     def getPrefLabel(self):
 
         if self.load_on_cuis:
             if len(self.atoms) == 1:
-                 return self.atoms[0][MRCONSO_STR]
+                return self.atoms[0][MRCONSO_STR]
 
             labels = set([x[MRCONSO_STR] for x in self.atoms])
             if len(labels) == 1:
@@ -248,12 +248,12 @@ class UmlsClass(object):
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
     
-    def toRDF(self,format="Turtle",hierarchy=True):
+    def toRDF(self,fmt="Turtle",hierarchy=True):
         term_code = self.code()
         url_term = self.getURLTerm(term_code)
 
-        if not format == "Turtle":
-            raise AttributeError, "Only format='Turtle' is currently supported"
+        if not fmt == "Turtle":
+            raise AttributeError, "Only fmt='Turtle' is currently supported"
 
         prefLabel = self.getPrefLabel()
         altLabels = self.getAltLabels(prefLabel)
@@ -269,7 +269,7 @@ class UmlsClass(object):
             rdf_term += '\tumls:isRoot "true"^^xsd:boolean;\n'
 
         if len(self.defs) > 0:
-             rdf_term += """\tskos:definition %s;
+            rdf_term += """\tskos:definition %s;
 """%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
 
         for rel in self.rels:
@@ -295,13 +295,13 @@ class UmlsClass(object):
         types = [self.sty[index][MRSTY_TUI] for index in sty_recs]
 
         for t in set(cuis):
-           rdf_term += """ %s \"\"\"%s\"\"\"^^xsd:string;
+            rdf_term += """ %s \"\"\"%s\"\"\"^^xsd:string;
 """%(HAS_CUI,t)
         for t in set(types):
-           rdf_term += """ %s \"\"\"%s\"\"\"^^xsd:string;
+            rdf_term += """ %s \"\"\"%s\"\"\"^^xsd:string;
 """%(HAS_TUI,t)
         for t in set(types):
-           rdf_term += """ %s <%s>;
+            rdf_term += """ %s <%s>;
 """%(HAS_STY,STY_URL+t)
 
         return rdf_term + " .\n\n"
@@ -314,9 +314,9 @@ class UmlsAttribute(object):
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
 
-    def toRDF(self,format="Turtle"):
-        if not format == "Turtle":
-            raise AttributeError, "Only format='Turtle' is currently supported"
+    def toRDF(self,fmt="Turtle"):
+        if not fmt == "Turtle":
+            raise AttributeError, "Only fmt='Turtle' is currently supported"
         return """<%s> a owl:DatatypeProperty;
 rdfs:label \"\"\"%s\"\"\";
 rdfs:comment \"\"\"%s\"\"\" .
@@ -367,7 +367,7 @@ class UmlsOntology(object):
         
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
-             self.cui_roots.add(atom[MRCONSO_CUI])
+            self.cui_roots.add(atom[MRCONSO_CUI])
 
         mrrel = UmlsTable("MRREL",self.con)
         mrrel_filt = "SAB = '%s'"%self.ont_code
@@ -455,7 +455,7 @@ class UmlsOntology(object):
 
     def write_into(self,file_path,hierarchy=True):
         fout = file(file_path,"w")
-        nterms = len(self.atoms_by_code)
+        #nterms = len(self.atoms_by_code)
         fout.write(PREFIXES)
         comment = "RDF Version of the UMLS ontology %s; " +\
                   "converted with the UMLS2RDF tool " +\
@@ -471,7 +471,7 @@ class UmlsOntology(object):
         header = ONTOLOGY_HEADER.substitute(header_values)
         fout.write(header)
         for term in self.terms():
-            fout.write(term.toRDF(format="Turtle",hierarchy=True))
+            fout.write(term.toRDF(fmt="Turtle",hierarchy=True))
         fout.close()
 
 if __name__ == "__main__":
