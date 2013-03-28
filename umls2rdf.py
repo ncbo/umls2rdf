@@ -1,14 +1,19 @@
 #! /usr/bin/python
 
-import MySQLdb
+import sys
 import os
 import urllib
 from string import Template
 import collections
+import MySQLdb
 #import pdb
 #from itertools import groupby
 
-import conf
+try:
+    import conf
+except:
+    print "Copy and modify conf_sample.py into conf.py"
+    raise
 
 PREFIXES = """
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
@@ -487,7 +492,11 @@ if __name__ == "__main__":
 
     if not os.path.isdir(conf.OUTPUT_FOLDER):
         raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
-        
+    
+    print umls_conf
+    sys.exit()
+    
+    
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
         if ";" in umls_code:
