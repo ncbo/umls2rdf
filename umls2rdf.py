@@ -493,10 +493,6 @@ if __name__ == "__main__":
     if not os.path.isdir(conf.OUTPUT_FOLDER):
         raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
     
-    print umls_conf
-    sys.exit()
-    
-    
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
         if ";" in umls_code:
