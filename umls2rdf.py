@@ -31,6 +31,7 @@ ONTOLOGY_HEADER = Template("""
     rdfs:label "$label" ;
     owl:imports <http://www.w3.org/2004/02/skos/core> ;
     owl:versionInfo "$versioninfo" .
+
 """)
 
 STY_URL = "http://bioportal.bioontology.org/ontologies/umls/sty/"
@@ -139,11 +140,12 @@ skos:prefLabel "%s"@en .
         fout.close()
 
 
+
 class UmlsTable(object):
     def __init__(self,table_name,conn,load_select=None):
         self.table_name = table_name
         self.conn = conn
-        self.page_size = 50000
+        self.page_size = 500000
         self.load_select = load_select
 
     def count(self):
@@ -184,6 +186,8 @@ class UmlsTable(object):
             page += 1
         cursor.close()
 
+
+
 class UmlsClass(object):
     def __init__(self,ns,atoms=None,rels=None,
                  defs=None,atts=None,rank=None,
@@ -213,7 +217,6 @@ class UmlsClass(object):
         return set([atom[MRCONSO_STR] for atom in self.atoms if atom[MRCONSO_STR] <> prefLabel])
         
     def getPrefLabel(self):
-
         if self.load_on_cuis:
             if len(self.atoms) == 1:
                 return self.atoms[0][MRCONSO_STR]
@@ -241,28 +244,23 @@ class UmlsClass(object):
                 lambda x: int(self.rank[self.rank_by_tty[x[MRCONSO_TTY]][0]][MRRANK_RANK])
                 mmrank_sorted_atoms = sorted(self.atoms,key=sort_key,reverse=True)
                 return mmrank_sorted_atoms[0][MRCONSO_STR]
-
             #there is no rank to use
             else:
                 pref_atom = filter(lambda x: 'P' in x[MRCONSO_TTY], self.atoms)
                 if len(pref_atom) == 1:
                     return pref_atom[0][MRCONSO_STR]
-     
             raise AttributeError, "Unable to select pref label"
     
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
     
     def toRDF(self,fmt="Turtle",hierarchy=True):
-        term_code = self.code()
-        url_term = self.getURLTerm(term_code)
-
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
-
+        term_code = self.code()
+        url_term = self.getURLTerm(term_code)
         prefLabel = self.getPrefLabel()
         altLabels = self.getAltLabels(prefLabel)
-
         rdf_term = """<%s> a owl:Class;
 \tskos:prefLabel \"\"\"%s\"\"\"@en;
 \tskos:notation \"\"\"%s\"\"\"^^xsd:string;
@@ -300,17 +298,19 @@ class UmlsClass(object):
         types = [self.sty[index][MRSTY_TUI] for index in sty_recs]
 
         for t in set(cuis):
-            rdf_term += """ %s \"\"\"%s\"\"\"^^xsd:string;
+            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string;
 """%(HAS_CUI,t)
         for t in set(types):
-            rdf_term += """ %s \"\"\"%s\"\"\"^^xsd:string;
+            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string;
 """%(HAS_TUI,t)
         for t in set(types):
-            rdf_term += """ %s <%s>;
+            rdf_term += """\t%s <%s>;
 """%(HAS_STY,STY_URL+t)
 
         return rdf_term + " .\n\n"
-        
+
+
+
 class UmlsAttribute(object):
     def __init__(self,ns,att):
         self.ns = ns
@@ -326,7 +326,8 @@ class UmlsAttribute(object):
 rdfs:label \"\"\"%s\"\"\";
 rdfs:comment \"\"\"%s\"\"\" .
 \n"""%(self.getURLTerm(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_DESC]))
-        
+
+
 
 class UmlsOntology(object):
     def __init__(self,ont_code,ns,con,load_on_cuis=False):
@@ -464,20 +465,20 @@ class UmlsOntology(object):
         fout.write(PREFIXES)
         comment = "RDF Version of the UMLS ontology %s; " +\
                   "converted with the UMLS2RDF tool " +\
-                  "(https://github.com/ncbo/umls2rdf). "+\
-                  "Developed by the NCBO project."
-
-        header_values=dict(
-           label=self.ont_code,
-           comment=comment%self.ont_code,
-           versioninfo=conf.UMLS_VERSION,
-           uri=self.ns
+                  "(https://github.com/ncbo/umls2rdf), "+\
+                  "developed by the NCBO project."
+        header_values = dict(
+           label = self.ont_code,
+           comment = comment % self.ont_code,
+           versioninfo = conf.UMLS_VERSION,
+           uri = self.ns
         )
-        header = ONTOLOGY_HEADER.substitute(header_values)
-        fout.write(header)
+        fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
-            fout.write(term.toRDF(fmt="Turtle",hierarchy=True))
+            fout.write(term.toRDF())
         fout.close()
+
+
 
 if __name__ == "__main__":
 
@@ -513,3 +514,4 @@ if __name__ == "__main__":
                 os.path.join(conf.OUTPUT_FOLDER,
                 "umls_semantictypes.ttl"))
     print("generate MRDOC at global/UMLS level")
+
