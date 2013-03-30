@@ -1,4 +1,6 @@
-#! /usr/bin/python
+#! /usr/bin/env python
+
+DEBUG = False
 
 import sys
 import os
@@ -91,8 +93,26 @@ def get_url_term(ns,code):
         ret = "%s/%s"%(ns,urllib.quote(code))
     return ret.replace("%20","+") 
 
+# http://www.nlm.nih.gov/research/umls/sourcereleasedocs/current/SNOMEDCT/relationships.html
+MRREL_DICT = {
+    'AQ': 'allowed qualifier',
+    'CHD': 'has child (narrower hierarchical term)',
+    'DEL': 'deleted concept',
+    'PAR': 'has parent (broader hierarchical term)',
+    'QB': 'can be qualifier by',
+    'RB': 'has a broader relationship',
+    'RL': 'has similar or like relationship',
+    'RN': 'has narrower relationship',
+    'RO': 'has relationship other than synonymous, narrower or broader',
+    'RQ': 'related and possibly synonymous',
+    'SIB': 'has sibling',
+    'SY': 'source-asserted synonymy',
+}
 def get_rel_fragment(rel):
-    return rel[MRREL_REL] if not rel[MRREL_RELA] else rel[MRREL_RELA]
+    code = rel[MRREL_RELA] if rel[MRREL_RELA] else rel[MRREL_REL]
+    if DEBUG:
+        if code in MRREL_DICT: print("%s : %s" % (code, MRREL_DICT[code]))
+    return MRREL_DICT[code] if code in MRREL_DICT else code
 
 def get_rel_code_source(rel,on_cuis):
     return rel[-1] if not on_cuis else rel[MRREL_CUI2]
@@ -122,8 +142,8 @@ def generate_semantic_types(con,url,fileout):
     for stt in mrsty.scan():
         hierarchy[stt[1]].append(stt[0])
         sty_term = """<%s> a owl:Class;
-skos:notation "%s"^^xsd:string;
-skos:prefLabel "%s"@en .
+\tskos:notation "%s"^^xsd:string;
+\tskos:prefLabel "%s"@en .
 """%(url+stt[0],stt[0],stt[2])
         ont.append(sty_term)
         all_nodes.append(stt)
@@ -181,7 +201,10 @@ class UmlsTable(object):
                 if limit and i >= limit:
                     cont = False
                     break
+            # Do we already have all the rows available for the query?
             if self.load_select:
+                cont = False
+            elif not limit and i < self.page_size:
                 cont = False
             page += 1
         cursor.close()
@@ -269,7 +292,9 @@ class UmlsClass(object):
             rdf_term += """\tskos:altLabel %s;
 """%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
         if self.is_root: 
-            rdf_term += '\tumls:isRoot "true"^^xsd:boolean;\n'
+            rdf_term += '\tumls:isRoot "true"^^xsd:boolean ;\n'
+            # TODO: Discuss adding this subclass relation.
+            #rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s;
@@ -281,15 +306,14 @@ class UmlsClass(object):
             if source_code <> term_code:
                 raise AttributeError, "Inconsistent code in rel"
             if rel[MRREL_REL] == 'CHD' and hierarchy:
-                rdf_term += """ rdfs:subClassOf <%s>;
-"""%(self.getURLTerm(target_code))
+                rdf_term += """\trdfs:subClassOf <%s> ;\n"""%(self.getURLTerm(target_code))
             elif  rel[MRREL_REL] == 'PAR':
                 continue
             else:
-                rdf_term += """ <%s> <%s>;
+                rdf_term += """\t<%s> <%s> ;
 """%(self.getURLTerm(get_rel_fragment(rel)),self.getURLTerm(target_code))
         for att in self.atts:
-            rdf_term += """ <%s> \"\"\"%s\"\"\"^^xsd:string;
+            rdf_term += """\t<%s> \"\"\"%s\"\"\"^^xsd:string ;
 """%(self.getURLTerm(att[MRSAT_ATN]),escape(att[MRSAT_ATV]))
            
 
@@ -298,14 +322,11 @@ class UmlsClass(object):
         types = [self.sty[index][MRSTY_TUI] for index in sty_recs]
 
         for t in set(cuis):
-            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string;
-"""%(HAS_CUI,t)
+            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_CUI,t)
         for t in set(types):
-            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string;
-"""%(HAS_TUI,t)
+            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_TUI,t)
         for t in set(types):
-            rdf_term += """\t%s <%s>;
-"""%(HAS_STY,STY_URL+t)
+            rdf_term += """\t%s <%s> ;\n"""%(HAS_STY,STY_URL+t)
 
         return rdf_term + " .\n\n"
 
@@ -323,43 +344,35 @@ class UmlsAttribute(object):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
         return """<%s> a owl:DatatypeProperty;
-rdfs:label \"\"\"%s\"\"\";
-rdfs:comment \"\"\"%s\"\"\" .
+\trdfs:label \"\"\"%s\"\"\";
+\trdfs:comment \"\"\"%s\"\"\" .
 \n"""%(self.getURLTerm(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_DESC]))
 
 
 
 class UmlsOntology(object):
     def __init__(self,ont_code,ns,con,load_on_cuis=False):
+        self.loaded = False
         self.ont_code = ont_code
         self.ns = ns
+        self.con = con
         self.load_on_cuis = load_on_cuis
-        self.alt_uri_code = alt_uri_code
-        
+        #self.alt_uri_code = alt_uri_code
         self.atoms = list()
         self.atoms_by_code = collections.defaultdict(lambda : list())
-
         if not self.load_on_cuis:
             self.atoms_by_aui = collections.defaultdict(lambda : list())
-        
         self.rels = list()
         self.rels_by_aui_src = collections.defaultdict(lambda : list())
-
         self.defs = list()
         self.defs_by_aui = collections.defaultdict(lambda : list())
-        
         self.atts = list()
         self.atts_by_code = collections.defaultdict(lambda : list())
-
         self.rank = list()
         self.rank_by_tty = collections.defaultdict(lambda : list())
-
         self.sty = list()
         self.sty_by_cui = collections.defaultdict(lambda : list())
-
         self.cui_roots = set()
-
-        self.con = con
 
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
@@ -370,11 +383,16 @@ class UmlsOntology(object):
             if not self.load_on_cuis:
                 self.atoms_by_aui[atom[MRCONSO_AUI]].append(index)
             self.atoms.append(atom)
-        
+        if DEBUG:
+            print("length atoms: %d" % len(self.atoms))
+            print "atom example: ", self.atoms[0]
+        #
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
             self.cui_roots.add(atom[MRCONSO_CUI])
-
+        if DEBUG:
+            print("length cui_roots: %d" % len(self.cui_roots))
+        #
         mrrel = UmlsTable("MRREL",self.con)
         mrrel_filt = "SAB = '%s'"%self.ont_code
         field = MRREL_AUI2 if not self.load_on_cuis else MRREL_CUI2
@@ -382,7 +400,9 @@ class UmlsOntology(object):
             index = len(self.rels)
             self.rels_by_aui_src[rel[field]].append(index)
             self.rels.append(rel)
-        
+        if DEBUG:
+            print("length rels: %d" % len(self.rels))
+        #
         mrdef = UmlsTable("MRDEF",self.con)
         mrdef_filt = "SAB = '%s'"%self.ont_code
         field = MRDEF_AUI if not self.load_on_cuis else MRDEF_CUI
@@ -390,7 +410,9 @@ class UmlsOntology(object):
             index = len(self.defs)
             self.defs_by_aui[defi[field]].append(index)
             self.defs.append(defi)
-        
+        if DEBUG:
+            print("length defs: %d" % len(self.defs))
+        #
         mrsat = UmlsTable("MRSAT",self.con)
         mrsat_filt = "SAB = '%s' AND CODE IS NOT NULL"%self.ont_code 
         field = MRSAT_CODE if not self.load_on_cuis else MRSAT_CUI
@@ -398,14 +420,18 @@ class UmlsOntology(object):
             index = len(self.atts)
             self.atts_by_code[att[field]].append(index)
             self.atts.append(att)
-
+        if DEBUG:
+            print("length atts: %d" % len(self.atts))
+        #
         mrrank = UmlsTable("MRRANK",self.con)
         mrrank_filt = "SAB = '%s'"%self.ont_code 
         for rank in mrrank.scan(filt=mrrank_filt):
             index = len(self.rank)
             self.rank_by_tty[rank[MRRANK_TTY]].append(index)
             self.rank.append(rank)
-
+        if DEBUG:
+            print("length rank: %d" % len(self.rank))
+        #
         load_mrsty = "SELECT sty.* FROM MRSTY sty, MRCONSO conso \
         WHERE conso.SAB = '%s' AND conso.cui = sty.cui"
         load_mrsty %= self.ont_code
@@ -414,8 +440,15 @@ class UmlsOntology(object):
             index = len(self.sty)
             self.sty_by_cui[sty[MRSTY_CUI]].append(index)
             self.sty.append(sty)
+        if DEBUG:
+            print("length sty: %d" % len(self.sty))
+        # Track the loaded status
+        self.loaded = True
+        print("%s tables loaded ..." % self.ont_code)
 
     def terms(self):
+        if not self.loaded:
+            self.load_tables()
         for code in self.atoms_by_code:
             code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]] 
             field = MRCONSO_AUI if not self.load_on_cuis else MRCONSO_CUI
@@ -423,6 +456,10 @@ class UmlsOntology(object):
             rels = list()
             for _id in ids:
                 rels += [self.rels[x] for x in self.rels_by_aui_src[_id]]
+            #if DEBUG:
+            #    print ids
+            #    print rels
+            #    sys.exit(1)
             rels_to_class = list()
             is_root = False
             if self.load_on_cuis:
@@ -460,6 +497,7 @@ class UmlsOntology(object):
                 load_on_cuis=self.load_on_cuis,is_root=is_root)
 
     def write_into(self,file_path,hierarchy=True):
+        print("%s writing terms ... %s" % (self.ont_code, file_path))
         fout = file(file_path,"w")
         #nterms = len(self.atoms_by_code)
         fout.write(PREFIXES)
@@ -501,17 +539,15 @@ if __name__ == "__main__":
         if umls_code.startswith("#"):
             continue
         load_on_cuis = load_on_field == "load_on_cuis"
-        print("Generating %s vrt_id %s"%(umls_code,vrt_id))
+        output_file = os.path.join(conf.OUTPUT_FOLDER,file_out)
+        print("Generating %s (virtual_id: %s, using '%s')"%(umls_code,vrt_id,load_on_field))
         ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
-        output_file = os.path.join(conf.OUTPUT_FOLDER,file_out)
-        ont.load_tables(limit=None)
-        print("tables loaded, writing terms ...")
+        ont.load_tables()
         ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
-        print("done!") 
+        print("done!\n") 
    
-    generate_semantic_types(con,STY_URL,
-                os.path.join(conf.OUTPUT_FOLDER,
-                "umls_semantictypes.ttl"))
+    output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
+    generate_semantic_types(con,STY_URL,output_file)
     print("generate MRDOC at global/UMLS level")
 
