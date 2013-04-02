@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-DEBUG = True
+DEBUG = False
 
 import sys
 import os
@@ -312,13 +312,13 @@ class UmlsClass(object):
 """%(self.getURLTerm(att[MRSAT_ATN]),escape(att[MRSAT_ATV]))
            
 
-        auis = set([x[MRCONSO_AUI] for x in self.atoms])
+        #auis = set([x[MRCONSO_AUI] for x in self.atoms])
         cuis = set([x[MRCONSO_CUI] for x in self.atoms])
         sty_recs = flatten([indexes for indexes in [self.sty_by_cui[cui] for cui in cuis]])
         types = [self.sty[index][MRSTY_TUI] for index in sty_recs]
 
-        for t in auis:
-            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_AUI,t)
+        #for t in auis:
+        #    rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_AUI,t)
         for t in cuis:
             rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_CUI,t)
         for t in set(types):
