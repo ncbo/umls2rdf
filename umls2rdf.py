@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-DEBUG = False
+DEBUG = True
 
 import sys
 import os
@@ -38,6 +38,7 @@ ONTOLOGY_HEADER = Template("""
 
 STY_URL = "http://bioportal.bioontology.org/ontologies/umls/sty/"
 HAS_STY = "umls:hasSTY"
+HAS_AUI = "umls:aui"
 HAS_CUI = "umls:cui"
 HAS_TUI = "umls:tui"
 
@@ -51,6 +52,7 @@ MRCONSO_TTY = 12
 MRCONSO_TS = 2
 MRCONSO_CUI = 0
 
+# http://www.nlm.nih.gov/research/umls/sourcereleasedocs/current/SNOMEDCT/relationships.html
 MRREL_AUI1 = 1
 MRREL_AUI2 = 5
 MRREL_CUI1 = 0
@@ -93,40 +95,22 @@ def get_url_term(ns,code):
         ret = "%s/%s"%(ns,urllib.quote(code))
     return ret.replace("%20","+") 
 
-# http://www.nlm.nih.gov/research/umls/sourcereleasedocs/current/SNOMEDCT/relationships.html
-MRREL_DICT = {
-    'AQ': 'allowed qualifier',
-    'CHD': 'has child (narrower hierarchical term)',
-    'DEL': 'deleted concept',
-    'PAR': 'has parent (broader hierarchical term)',
-    'QB': 'can be qualifier by',
-    'RB': 'has a broader relationship',
-    'RL': 'has similar or like relationship',
-    'RN': 'has narrower relationship',
-    'RO': 'has relationship other than synonymous, narrower or broader',
-    'RQ': 'related and possibly synonymous',
-    'SIB': 'has sibling',
-    'SY': 'source-asserted synonymy',
-}
 def get_rel_fragment(rel):
-    code = rel[MRREL_RELA] if rel[MRREL_RELA] else rel[MRREL_REL]
-    if DEBUG:
-        if code in MRREL_DICT: print("%s : %s" % (code, MRREL_DICT[code]))
-    return MRREL_DICT[code] if code in MRREL_DICT else code
+    return rel[MRREL_RELA] if rel[MRREL_RELA] else rel[MRREL_REL]
 
+# NOTE: See UmlsOntology.terms() for the reason these functions use -1 and -2
+# indices to obtain the source and target codes, respectively.
 def get_rel_code_source(rel,on_cuis):
     return rel[-1] if not on_cuis else rel[MRREL_CUI2]
-
 def get_rel_code_target(rel,on_cuis):
     return rel[-2] if not on_cuis else rel[MRREL_CUI1]
 
 def get_code(reg,load_on_cuis):
-    if not load_on_cuis:
-        if reg[MRCONSO_CODE]:
-            return reg[MRCONSO_CODE]
-        raise AttributeError, "No code on reg [%s]"%("|".join(reg))
-    else:
+    if load_on_cuis:
         return reg[MRCONSO_CUI]
+    if reg[MRCONSO_CODE]:
+        return reg[MRCONSO_CODE]
+    raise AttributeError, "No code on reg [%s]"%("|".join(reg))
 
 def __get_connection():
     return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
@@ -233,6 +217,9 @@ class UmlsClass(object):
         codes = set([get_code(x,self.load_on_cuis) for x in self.atoms])
         if len(codes) <> 1:
             raise AttributeError, "Only one code per term."
+        #if DEBUG:
+            #print(self.atoms)
+            #print(codes)
         return codes.pop()
 
     def getAltLabels(self,prefLabel):
@@ -305,23 +292,34 @@ class UmlsClass(object):
             target_code = get_rel_code_target(rel,self.load_on_cuis)
             if source_code <> term_code:
                 raise AttributeError, "Inconsistent code in rel"
+            # Map child relations to rdf:subClassOf (skip parent relations).
+            if rel[MRREL_REL] == 'PAR':
+                continue
             if rel[MRREL_REL] == 'CHD' and hierarchy:
                 rdf_term += """\trdfs:subClassOf <%s> ;\n"""%(self.getURLTerm(target_code))
-            elif  rel[MRREL_REL] == 'PAR':
-                continue
             else:
                 rdf_term += """\t<%s> <%s> ;
 """%(self.getURLTerm(get_rel_fragment(rel)),self.getURLTerm(target_code))
+            # if DEBUG:
+            #      #print(rel)
+            #      print("REL: %s, RELA: %s" % (rel[MRREL_REL], rel[MRREL_RELA]))
+            #      #print("source: %s" % self.getURLTerm(source_code))
+            #      #print("predicte: %s" % self.getURLTerm(get_rel_fragment(rel)))
+            #      #print("target %s\n" % self.getURLTerm(target_code))
+
         for att in self.atts:
             rdf_term += """\t<%s> \"\"\"%s\"\"\"^^xsd:string ;
 """%(self.getURLTerm(att[MRSAT_ATN]),escape(att[MRSAT_ATV]))
            
 
+        auis = set([x[MRCONSO_AUI] for x in self.atoms])
         cuis = set([x[MRCONSO_CUI] for x in self.atoms])
         sty_recs = flatten([indexes for indexes in [self.sty_by_cui[cui] for cui in cuis]])
         types = [self.sty[index][MRSTY_TUI] for index in sty_recs]
 
-        for t in set(cuis):
+        for t in auis:
+            rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_AUI,t)
+        for t in cuis:
             rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_CUI,t)
         for t in set(types):
             rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_TUI,t)
@@ -385,6 +383,7 @@ class UmlsOntology(object):
             self.atoms.append(atom)
         if DEBUG:
             print("length atoms: %d" % len(self.atoms))
+            print("length atoms_by_aui: %d" % len(self.atoms_by_aui))
             print "atom example: ", self.atoms[0]
         #
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
@@ -449,17 +448,14 @@ class UmlsOntology(object):
     def terms(self):
         if not self.loaded:
             self.load_tables()
+        # Note: most UMLS ontologies are 'load_on_codes' (only HL7 is load_on_cuis)
         for code in self.atoms_by_code:
             code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]] 
-            field = MRCONSO_AUI if not self.load_on_cuis else MRCONSO_CUI
+            field = MRCONSO_CUI if self.load_on_cuis else MRCONSO_AUI 
             ids = map(lambda x: x[field], code_atoms)
             rels = list()
             for _id in ids:
                 rels += [self.rels[x] for x in self.rels_by_aui_src[_id]]
-            #if DEBUG:
-            #    print ids
-            #    print rels
-            #    sys.exit(1)
             rels_to_class = list()
             is_root = False
             if self.load_on_cuis:
@@ -477,6 +473,7 @@ class UmlsOntology(object):
                                         for x in self.atoms_by_aui[aui_source] ]
                     code_target = [ get_code(self.atoms[x],self.load_on_cuis) \
                                         for x in self.atoms_by_aui[aui_target] ]
+                    # TODO: Check use of CUI1 (target) or CUI2 (source) here:
                     if rel[MRREL_CUI1] in self.cui_roots:
                         is_root = True
                     if len(code_source) <> 1 or len(code_target) > 1:
@@ -485,6 +482,10 @@ class UmlsOntology(object):
                         code_source[0] <> code_target[0]:
                         code_source = code_source[0]
                         code_target = code_target[0]
+                        # NOTE: the order of these append operations below is important.
+                        # get_rel_code_source() - it uses [-1]
+                        # get_rel_code_target() - it uses [-2]
+                        # which are called from UmlsClass.toRDF().
                         rel_with_codes.append(code_target)
                         rel_with_codes.append(code_source)
                         rels_to_class.append(rel_with_codes)
