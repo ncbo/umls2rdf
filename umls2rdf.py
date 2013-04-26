@@ -300,12 +300,13 @@ class UmlsClass(object):
             else:
                 rdf_term += """\t<%s> <%s> ;
 """%(self.getURLTerm(get_rel_fragment(rel)),self.getURLTerm(target_code))
-            # if DEBUG:
-            #      #print(rel)
-            #      print("REL: %s, RELA: %s" % (rel[MRREL_REL], rel[MRREL_RELA]))
-            #      #print("source: %s" % self.getURLTerm(source_code))
-            #      #print("predicte: %s" % self.getURLTerm(get_rel_fragment(rel)))
-            #      #print("target %s\n" % self.getURLTerm(target_code))
+                if DEBUG and rel[MRREL_REL] == 'AQ':
+                    print("rdf_term: %s" % rdf_term)
+                    print("rel: %s" % rel)
+                    print("REL: %s, RELA: %s" % (rel[MRREL_REL], rel[MRREL_RELA]))
+                    print("source: %s" % self.getURLTerm(source_code))
+                    print("predicte: %s" % self.getURLTerm(get_rel_fragment(rel)))
+                    print("target %s\n" % self.getURLTerm(target_code))
 
         for att in self.atts:
             rdf_term += """\t<%s> \"\"\"%s\"\"\"^^xsd:string ;
