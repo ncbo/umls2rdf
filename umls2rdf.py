@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-DEBUG = False
+DEBUG = True
 
 import sys
 import os
@@ -96,7 +96,15 @@ def get_url_term(ns,code):
     return ret.replace("%20","+") 
 
 def get_rel_fragment(rel):
-    return rel[MRREL_RELA] if rel[MRREL_RELA] else rel[MRREL_REL]
+    if rel[MRREL_RELA]:
+        p = rel[MRREL_RELA]
+    else:
+        p = rel[MRREL_REL]
+        # Replace the predicate acronym 'AQ' with it's full name, 'Allowed Qualifier'.
+        if p == 'AQ':
+            p = 'Allowed Qualifier'
+    return p
+
 
 # NOTE: See UmlsOntology.terms() for the reason these functions use -1 and -2
 # indices to obtain the source and target codes, respectively.
@@ -297,17 +305,21 @@ class UmlsClass(object):
             if rel[MRREL_REL] == 'PAR':
                 continue
             if rel[MRREL_REL] == 'CHD' and hierarchy:
-                rdf_term += """\trdfs:subClassOf <%s> ;\n"""%(self.getURLTerm(target_code))
+                p = "rdfs:subClassOf"
+                o = self.getURLTerm(target_code)
+                rdf_term += "\t<%s> <%s> ;\n" % (p,o)
             else:
-                rdf_term += """\t<%s> <%s> ;
-"""%(self.getURLTerm(get_rel_fragment(rel)),self.getURLTerm(target_code))
+                p = self.getURLTerm(get_rel_fragment(rel))
+                if rel[MRREL_REL] == 'AQ' and p == 'Allowed Qualifier':
+                    target_code = '~'.join(target_code.split('~')[:2]) 
+                o = self.getURLTerm(target_code)
+                rdf_term += "\t<%s> <%s> ;\n" % (p,o)
                 if DEBUG and rel[MRREL_REL] == 'AQ':
-                    sys.stderr.write("rdf_term: %s\n" % rdf_term)
                     sys.stderr.write("rel: %s\n" % rel)
                     sys.stderr.write("REL: %s, RELA: %s\n" % (rel[MRREL_REL], rel[MRREL_RELA]))
-                    sys.stderr.write("source: %s\n" % self.getURLTerm(source_code))
-                    sys.stderr.write("predicte: %s\n" % self.getURLTerm(get_rel_fragment(rel)))
-                    sys.stderr.write("target %s\n\n" % self.getURLTerm(target_code))
+                    sys.stderr.write("source:\t%s\n" % self.getURLTerm(source_code))
+                    sys.stderr.write("predicate:\t%s\n" % p)
+                    sys.stderr.write("target:\t%s\n\n" % o)
                     sys.stderr.flush()
 
         for att in self.atts:
