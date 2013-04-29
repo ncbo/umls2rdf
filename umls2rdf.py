@@ -385,7 +385,7 @@ class UmlsOntology(object):
         if DEBUG:
             sys.stderr.write("length atoms: %d" % len(self.atoms))
             sys.stderr.write("length atoms_by_aui: %d" % len(self.atoms_by_aui))
-            sys.stderr.write "atom example: ", self.atoms[0]
+            sys.stderr.write("atom example: %s" % self.atoms[0])
         #
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
