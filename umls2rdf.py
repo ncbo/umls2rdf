@@ -14,7 +14,7 @@ import MySQLdb
 try:
     import conf
 except:
-    print "Copy and modify conf_sample.py into conf.py"
+    sys.stdout.write("Copy and modify conf_sample.py into conf.py\n")
     raise
 
 PREFIXES = """
@@ -174,7 +174,8 @@ class UmlsTable(object):
                 q = "SELECT * FROM %s WHERE %s LIMIT %s OFFSET %s"%(self.table_name,filt,self.page_size,page * self.page_size)
                 if filt == None or len(filt) == 0:
                     q = "SELECT * FROM %s LIMIT %s OFFSET %s"%(self.table_name,self.page_size,page * self.page_size)
-            print("[UMLS-Query] %s"%q)
+            sys.stdout.write("[UMLS-Query] %s\n" % q)
+            sys.stdout.flush()
             cursor.execute(q)
             result = cursor.fetchall()
             cont = False
@@ -301,12 +302,13 @@ class UmlsClass(object):
                 rdf_term += """\t<%s> <%s> ;
 """%(self.getURLTerm(get_rel_fragment(rel)),self.getURLTerm(target_code))
                 if DEBUG and rel[MRREL_REL] == 'AQ':
-                    sys.stderr.write("rdf_term: %s" % rdf_term)
-                    sys.stderr.write("rel: %s" % rel)
-                    sys.stderr.write("REL: %s, RELA: %s" % (rel[MRREL_REL], rel[MRREL_RELA]))
-                    sys.stderr.write("source: %s" % self.getURLTerm(source_code))
-                    sys.stderr.write("predicte: %s" % self.getURLTerm(get_rel_fragment(rel)))
-                    sys.stderr.write("target %s\n" % self.getURLTerm(target_code))
+                    sys.stderr.write("rdf_term: %s\n" % rdf_term)
+                    sys.stderr.write("rel: %s\n" % rel)
+                    sys.stderr.write("REL: %s, RELA: %s\n" % (rel[MRREL_REL], rel[MRREL_RELA]))
+                    sys.stderr.write("source: %s\n" % self.getURLTerm(source_code))
+                    sys.stderr.write("predicte: %s\n" % self.getURLTerm(get_rel_fragment(rel)))
+                    sys.stderr.write("target %s\n\n" % self.getURLTerm(target_code))
+                    sys.stderr.flush()
 
         for att in self.atts:
             rdf_term += """\t<%s> \"\"\"%s\"\"\"^^xsd:string ;
@@ -383,15 +385,17 @@ class UmlsOntology(object):
                 self.atoms_by_aui[atom[MRCONSO_AUI]].append(index)
             self.atoms.append(atom)
         if DEBUG:
-            sys.stderr.write("length atoms: %d" % len(self.atoms))
-            sys.stderr.write("length atoms_by_aui: %d" % len(self.atoms_by_aui))
-            sys.stderr.write("atom example: %s" % self.atoms[0])
+            sys.stderr.write("length atoms: %d\n" % len(self.atoms))
+            sys.stderr.write("length atoms_by_aui: %d\n" % len(self.atoms_by_aui))
+            sys.stderr.write("atom example: %s\n\n" % str(self.atoms[0]))
+            sys.stderr.flush()
         #
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
             self.cui_roots.add(atom[MRCONSO_CUI])
         if DEBUG:
-            sys.stderr.write("length cui_roots: %d" % len(self.cui_roots))
+            sys.stderr.write("length cui_roots: %d\n\n" % len(self.cui_roots))
+            sys.stderr.flush()
         #
         mrrel = UmlsTable("MRREL",self.con)
         mrrel_filt = "SAB = '%s'"%self.ont_code
@@ -401,7 +405,8 @@ class UmlsOntology(object):
             self.rels_by_aui_src[rel[field]].append(index)
             self.rels.append(rel)
         if DEBUG:
-            sys.stderr.write("length rels: %d" % len(self.rels))
+            sys.stderr.write("length rels: %d\n\n" % len(self.rels))
+            sys.stderr.flush()
         #
         mrdef = UmlsTable("MRDEF",self.con)
         mrdef_filt = "SAB = '%s'"%self.ont_code
@@ -411,7 +416,8 @@ class UmlsOntology(object):
             self.defs_by_aui[defi[field]].append(index)
             self.defs.append(defi)
         if DEBUG:
-            sys.stderr.write("length defs: %d" % len(self.defs))
+            sys.stderr.write("length defs: %d\n\n" % len(self.defs))
+            sys.stderr.flush()
         #
         mrsat = UmlsTable("MRSAT",self.con)
         mrsat_filt = "SAB = '%s' AND CODE IS NOT NULL"%self.ont_code 
@@ -421,7 +427,8 @@ class UmlsOntology(object):
             self.atts_by_code[att[field]].append(index)
             self.atts.append(att)
         if DEBUG:
-            sys.stderr.write("length atts: %d" % len(self.atts))
+            sys.stderr.write("length atts: %d\n\n" % len(self.atts))
+            sys.stderr.flush()
         #
         mrrank = UmlsTable("MRRANK",self.con)
         mrrank_filt = "SAB = '%s'"%self.ont_code 
@@ -430,7 +437,8 @@ class UmlsOntology(object):
             self.rank_by_tty[rank[MRRANK_TTY]].append(index)
             self.rank.append(rank)
         if DEBUG:
-            sys.stderr.write("length rank: %d" % len(self.rank))
+            sys.stderr.write("length rank: %d\n\n" % len(self.rank))
+            sys.stderr.flush()
         #
         load_mrsty = "SELECT sty.* FROM MRSTY sty, MRCONSO conso \
         WHERE conso.SAB = '%s' AND conso.cui = sty.cui"
@@ -441,10 +449,12 @@ class UmlsOntology(object):
             self.sty_by_cui[sty[MRSTY_CUI]].append(index)
             self.sty.append(sty)
         if DEBUG:
-            sys.stderr.write("length sty: %d" % len(self.sty))
+            sys.stderr.write("length sty: %d\n\n" % len(self.sty))
+            sys.stderr.flush()
         # Track the loaded status
         self.loaded = True
-        print("%s tables loaded ..." % self.ont_code)
+        sys.stdout.write("%s tables loaded ...\n" % self.ont_code)
+        sys.stdout.flush()
 
     def terms(self):
         if not self.loaded:
@@ -499,7 +509,8 @@ class UmlsOntology(object):
                 load_on_cuis=self.load_on_cuis,is_root=is_root)
 
     def write_into(self,file_path,hierarchy=True):
-        print("%s writing terms ... %s" % (self.ont_code, file_path))
+        sys.stdout.write("%s writing terms ... %s\n" % (self.ont_code, file_path))
+        sys.stdout.flush()
         fout = file(file_path,"w")
         #nterms = len(self.atoms_by_code)
         fout.write(PREFIXES)
@@ -542,14 +553,17 @@ if __name__ == "__main__":
             continue
         load_on_cuis = load_on_field == "load_on_cuis"
         output_file = os.path.join(conf.OUTPUT_FOLDER,file_out)
-        print("Generating %s (virtual_id: %s, using '%s')"%(umls_code,vrt_id,load_on_field))
+        sys.stdout.write("Generating %s (virtual_id: %s, using '%s')\n" % (umls_code,vrt_id,load_on_field))
+        sys.stdout.flush()
         ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
         ont.load_tables()
         ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
-        print("done!\n") 
+        sys.stdout.write("done!\n\n")
+        sys.stdout.flush()
    
     output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
     generate_semantic_types(con,STY_URL,output_file)
-    print("generate MRDOC at global/UMLS level")
+    sys.stdout.write("generate MRDOC at global/UMLS level\n")
+    sys.stdout.flush()
 
