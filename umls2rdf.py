@@ -218,8 +218,8 @@ class UmlsClass(object):
         if len(codes) <> 1:
             raise AttributeError, "Only one code per term."
         #if DEBUG:
-            #print(self.atoms)
-            #print(codes)
+            #sys.stderr.write(self.atoms)
+            #sys.stderr.write(codes)
         return codes.pop()
 
     def getAltLabels(self,prefLabel):
@@ -301,12 +301,12 @@ class UmlsClass(object):
                 rdf_term += """\t<%s> <%s> ;
 """%(self.getURLTerm(get_rel_fragment(rel)),self.getURLTerm(target_code))
                 if DEBUG and rel[MRREL_REL] == 'AQ':
-                    print("rdf_term: %s" % rdf_term)
-                    print("rel: %s" % rel)
-                    print("REL: %s, RELA: %s" % (rel[MRREL_REL], rel[MRREL_RELA]))
-                    print("source: %s" % self.getURLTerm(source_code))
-                    print("predicte: %s" % self.getURLTerm(get_rel_fragment(rel)))
-                    print("target %s\n" % self.getURLTerm(target_code))
+                    sys.stderr.write("rdf_term: %s" % rdf_term)
+                    sys.stderr.write("rel: %s" % rel)
+                    sys.stderr.write("REL: %s, RELA: %s" % (rel[MRREL_REL], rel[MRREL_RELA]))
+                    sys.stderr.write("source: %s" % self.getURLTerm(source_code))
+                    sys.stderr.write("predicte: %s" % self.getURLTerm(get_rel_fragment(rel)))
+                    sys.stderr.write("target %s\n" % self.getURLTerm(target_code))
 
         for att in self.atts:
             rdf_term += """\t<%s> \"\"\"%s\"\"\"^^xsd:string ;
@@ -383,15 +383,15 @@ class UmlsOntology(object):
                 self.atoms_by_aui[atom[MRCONSO_AUI]].append(index)
             self.atoms.append(atom)
         if DEBUG:
-            print("length atoms: %d" % len(self.atoms))
-            print("length atoms_by_aui: %d" % len(self.atoms_by_aui))
-            print "atom example: ", self.atoms[0]
+            sys.stderr.write("length atoms: %d" % len(self.atoms))
+            sys.stderr.write("length atoms_by_aui: %d" % len(self.atoms_by_aui))
+            sys.stderr.write "atom example: ", self.atoms[0]
         #
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
             self.cui_roots.add(atom[MRCONSO_CUI])
         if DEBUG:
-            print("length cui_roots: %d" % len(self.cui_roots))
+            sys.stderr.write("length cui_roots: %d" % len(self.cui_roots))
         #
         mrrel = UmlsTable("MRREL",self.con)
         mrrel_filt = "SAB = '%s'"%self.ont_code
@@ -401,7 +401,7 @@ class UmlsOntology(object):
             self.rels_by_aui_src[rel[field]].append(index)
             self.rels.append(rel)
         if DEBUG:
-            print("length rels: %d" % len(self.rels))
+            sys.stderr.write("length rels: %d" % len(self.rels))
         #
         mrdef = UmlsTable("MRDEF",self.con)
         mrdef_filt = "SAB = '%s'"%self.ont_code
@@ -411,7 +411,7 @@ class UmlsOntology(object):
             self.defs_by_aui[defi[field]].append(index)
             self.defs.append(defi)
         if DEBUG:
-            print("length defs: %d" % len(self.defs))
+            sys.stderr.write("length defs: %d" % len(self.defs))
         #
         mrsat = UmlsTable("MRSAT",self.con)
         mrsat_filt = "SAB = '%s' AND CODE IS NOT NULL"%self.ont_code 
@@ -421,7 +421,7 @@ class UmlsOntology(object):
             self.atts_by_code[att[field]].append(index)
             self.atts.append(att)
         if DEBUG:
-            print("length atts: %d" % len(self.atts))
+            sys.stderr.write("length atts: %d" % len(self.atts))
         #
         mrrank = UmlsTable("MRRANK",self.con)
         mrrank_filt = "SAB = '%s'"%self.ont_code 
@@ -430,7 +430,7 @@ class UmlsOntology(object):
             self.rank_by_tty[rank[MRRANK_TTY]].append(index)
             self.rank.append(rank)
         if DEBUG:
-            print("length rank: %d" % len(self.rank))
+            sys.stderr.write("length rank: %d" % len(self.rank))
         #
         load_mrsty = "SELECT sty.* FROM MRSTY sty, MRCONSO conso \
         WHERE conso.SAB = '%s' AND conso.cui = sty.cui"
@@ -441,7 +441,7 @@ class UmlsOntology(object):
             self.sty_by_cui[sty[MRSTY_CUI]].append(index)
             self.sty.append(sty)
         if DEBUG:
-            print("length sty: %d" % len(self.sty))
+            sys.stderr.write("length sty: %d" % len(self.sty))
         # Track the loaded status
         self.loaded = True
         print("%s tables loaded ..." % self.ont_code)
