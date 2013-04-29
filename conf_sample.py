@@ -1,4 +1,4 @@
-#Folder to dumpt the RDF files.
+#Folder to dump the RDF files.
 OUTPUT_FOLDER = "output"
 
 #DB Config
