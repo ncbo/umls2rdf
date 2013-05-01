@@ -315,7 +315,7 @@ class UmlsClass(object):
             rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n" % (self.getURLTerm(atn), escape(atv))
             #
             if DEBUG and att[MRSAT_ATN] == 'AQ':
-                sys.stderr.write("att: %s\n" % att)
+                sys.stderr.write("att: %s\n" % str(att))
                 sys.stderr.write("att name:\t%s\n" % atn)
                 sys.stderr.write("att val:\t%s\n\n" % atv)
                 sys.stderr.flush()
