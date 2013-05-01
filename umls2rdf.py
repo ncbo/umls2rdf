@@ -309,16 +309,13 @@ class UmlsClass(object):
             atn = att[MRSAT_ATN]
             atv = att[MRSAT_ATV]
             if atn == 'AQ':
-                # Use only the first two components of the AQ value.
-                atn = 'ALLOWEDQUALIFIER'
-                atv = '~'.join(atv.split('~')[:2]) 
+                # Skip all these values (they are replicated in MRREL for
+                # SNOMEDCT, unknown relationship for MSH).
+                #if DEBUG:
+                #  sys.stderr.write("att: %s\n" % str(att))
+                #  sys.stderr.flush()
+                continue
             rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n" % (self.getURLTerm(atn), escape(atv))
-            #
-            if DEBUG and att[MRSAT_ATN] == 'AQ':
-                sys.stderr.write("att: %s\n" % str(att))
-                sys.stderr.write("att name:\t%s\n" % atn)
-                sys.stderr.write("att val:\t%s\n\n" % atv)
-                sys.stderr.flush()
 
         #auis = set([x[MRCONSO_AUI] for x in self.atoms])
         cuis = set([x[MRCONSO_CUI] for x in self.atoms])
