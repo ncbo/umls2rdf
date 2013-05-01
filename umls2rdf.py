@@ -312,7 +312,7 @@ class UmlsClass(object):
                 # Use only the first two components of the AQ value.
                 atn = 'ALLOWEDQUALIFIER'
                 atv = '~'.join(atv.split('~')[:2]) 
-            rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ; " % (self.getURLTerm(atn), escape(atv))
+            rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n" % (self.getURLTerm(atn), escape(atv))
             #
             if DEBUG and att[MRSAT_ATN] == 'AQ':
                 sys.stderr.write("att: %s\n" % att)
