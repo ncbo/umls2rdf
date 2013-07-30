@@ -126,8 +126,8 @@ def generate_semantic_types(con,url,fileout):
 
     for stt in mrsty.scan():
         hierarchy[stt[1]].append(stt[0])
-        sty_term = """<%s> a owl:Class;
-\tskos:notation "%s"^^xsd:string;
+        sty_term = """<%s> a owl:Class ;
+\tskos:notation "%s"^^xsd:string ;
 \tskos:prefLabel "%s"@en .
 """%(url+stt[0],stt[0],stt[2])
         ont.append(sty_term)
@@ -273,12 +273,12 @@ class UmlsClass(object):
         url_term = self.getURLTerm(term_code)
         prefLabel = self.getPrefLabel()
         altLabels = self.getAltLabels(prefLabel)
-        rdf_term = """<%s> a owl:Class;
-\tskos:prefLabel \"\"\"%s\"\"\"@en;
-\tskos:notation \"\"\"%s\"\"\"^^xsd:string;
+        rdf_term = """<%s> a owl:Class ;
+\tskos:prefLabel \"\"\"%s\"\"\"@en ;
+\tskos:notation \"\"\"%s\"\"\"^^xsd:string ;
 """%(url_term,escape(prefLabel),escape(term_code))
         if len(altLabels) > 0:
-            rdf_term += """\tskos:altLabel %s;
+            rdf_term += """\tskos:altLabel %s ;
 """%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
         if self.is_root: 
             rdf_term += '\tumls:isRoot "true"^^xsd:boolean ;\n'
@@ -286,7 +286,7 @@ class UmlsClass(object):
             #rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
         if len(self.defs) > 0:
-            rdf_term += """\tskos:definition %s;
+            rdf_term += """\tskos:definition %s ;
 """%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
 
         for rel in self.rels:
@@ -346,7 +346,7 @@ class UmlsAttribute(object):
     def toRDF(self,fmt="Turtle"):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
-        return """<%s> a owl:DatatypeProperty;
+        return """<%s> a owl:DatatypeProperty ;
 \trdfs:label \"\"\"%s\"\"\";
 \trdfs:comment \"\"\"%s\"\"\" .
 \n"""%(self.getURLTerm(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_DESC]))
@@ -398,6 +398,7 @@ class UmlsOntology(object):
         if DEBUG:
             sys.stderr.write("length cui_roots: %d\n\n" % len(self.cui_roots))
             sys.stderr.flush()
+
         #
         mrrel = UmlsTable("MRREL",self.con)
         mrrel_filt = "SAB = '%s'"%self.ont_code
