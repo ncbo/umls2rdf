@@ -279,7 +279,7 @@ class UmlsClass(object):
 """%(url_term,escape(prefLabel),escape(term_code))
         if len(altLabels) > 0:
             rdf_term += """\tskos:altLabel %s ;
-"""%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
+"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
         if self.is_root: 
             rdf_term += '\tumls:isRoot "true"^^xsd:boolean ;\n'
             # TODO: Discuss adding this subclass relation.
@@ -287,7 +287,7 @@ class UmlsClass(object):
 
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s ;
-"""%(", ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
+"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
 
         for rel in self.rels:
             source_code = get_rel_code_source(rel,self.load_on_cuis)
