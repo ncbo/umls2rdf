@@ -1,3 +1,8 @@
 conf.py
 *.pyc
 output/*
+
+*.swp
+sync*
+*.spf
+*.rsync
