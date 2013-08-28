@@ -117,6 +117,11 @@ def __get_connection():
     return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
               passwd=conf.DB_PASS,db=conf.DB_NAME)
 
+def orphan_class():
+    return """umls:OrphanClass a owl:Class ;
+\tskos:prefLabel "Class to gather orphan classes under a single ontology branch"@en .
+"""
+
 def generate_semantic_types(con,url,fileout):
     hierarchy = collections.defaultdict(lambda : list()) 
     all_nodes = list()
