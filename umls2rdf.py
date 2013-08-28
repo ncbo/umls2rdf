@@ -286,9 +286,7 @@ class UmlsClass(object):
             rdf_term += """\tskos:altLabel %s ;
 """%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
         if self.is_root: 
-            rdf_term += '\tumls:isRoot "true"^^xsd:boolean ;\n'
-            # TODO: Discuss adding this subclass relation.
-            #rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
+            rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s ;
