@@ -219,6 +219,7 @@ class UmlsClass(object):
         self.sty_by_cui = sty_by_cui
         self.load_on_cuis = load_on_cuis
         self.is_root = is_root
+        self.orphan = False
 
     def code(self):
         codes = set([get_code(x,self.load_on_cuis) for x in self.atoms])
@@ -292,6 +293,7 @@ class UmlsClass(object):
             rdf_term += """\tskos:definition %s ;
 """%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
 
+        count_parents = 0
         for rel in self.rels:
             source_code = get_rel_code_source(rel,self.load_on_cuis)
             target_code = get_rel_code_target(rel,self.load_on_cuis)
@@ -302,11 +304,16 @@ class UmlsClass(object):
                 continue
             if rel[MRREL_REL] == 'CHD' and hierarchy:
                 o = self.getURLTerm(target_code)
+                count_parents += 1
                 rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
             else:
                 p = self.getURLTerm(get_rel_fragment(rel))
                 o = self.getURLTerm(target_code)
                 rdf_term += "\t<%s> <%s> ;\n" % (p,o)
+
+        if count_parents == 0:
+            rdf_term += "\trdfs:subClassOf umls:OrphanClass;\n"
+            self.orphan = True
 
         for att in self.atts:
             atn = att[MRSAT_ATN]
@@ -531,8 +538,13 @@ class UmlsOntology(object):
            uri = self.ns
         )
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
+        write_orphan_class = False
         for term in self.terms():
             fout.write(term.toRDF())
+            if term.orphan:
+                write_orphan_class = True
+        if write_orphan_class:
+            fout.write(orphan_class())
         fout.close()
 
 
