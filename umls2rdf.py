@@ -8,7 +8,7 @@ import urllib
 from string import Template
 import collections
 import MySQLdb
-#import pdb
+import pdb
 #from itertools import groupby
 
 try:
@@ -374,7 +374,7 @@ class UmlsOntology(object):
         #self.alt_uri_code = alt_uri_code
         self.atoms = list()
         self.atoms_by_code = collections.defaultdict(lambda : list())
-        if not self.load_on_cuis:
+        if self.load_on_cuis:
             self.atoms_by_aui = collections.defaultdict(lambda : list())
         self.rels = list()
         self.rels_by_aui_src = collections.defaultdict(lambda : list())
