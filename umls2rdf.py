@@ -118,8 +118,9 @@ def __get_connection():
               passwd=conf.DB_PASS,db=conf.DB_NAME)
 
 def orphan_class():
-    return """umls:OrphanClass a owl:Class ;
-\tskos:prefLabel "Class to gather orphan classes under a single ontology branch"@en .
+    return """umls:UMLSOrphanClass a owl:Class ;
+\tskos:prefLabel "UMLS Orphan Branch"@en;
+\trdfs:subClassOf owl:Thing .
 """
 
 def generate_semantic_types(con,url,fileout):
