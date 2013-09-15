@@ -374,7 +374,7 @@ class UmlsOntology(object):
         #self.alt_uri_code = alt_uri_code
         self.atoms = list()
         self.atoms_by_code = collections.defaultdict(lambda : list())
-        if self.load_on_cuis:
+        if not self.load_on_cuis:
             self.atoms_by_aui = collections.defaultdict(lambda : list())
         self.rels = list()
         self.rels_by_aui_src = collections.defaultdict(lambda : list())
@@ -390,7 +390,13 @@ class UmlsOntology(object):
 
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
-        mrconso_filt = "SAB = '%s' AND lat = 'ENG'"%self.ont_code
+        lat = "ENG"
+        other_langs = ["FRE","SPA","GER","POR"]
+        for other in other_langs:
+            if self.ont_code.endswith(other):
+                lat = other
+
+        mrconso_filt = "SAB = '%s' AND lat = '%s'"%(self.ont_code,lat)
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
             index = len(self.atoms)
             self.atoms_by_code[get_code(atom,self.load_on_cuis)].append(index)
@@ -400,7 +406,7 @@ class UmlsOntology(object):
         if DEBUG:
             sys.stderr.write("length atoms: %d\n" % len(self.atoms))
             sys.stderr.write("length atoms_by_aui: %d\n" % len(self.atoms_by_aui))
-            sys.stderr.write("atom example: %s\n\n" % str(self.atoms[0]))
+            sys.stderr.write("atom example: %s\n\n" % str(self.atoms))
             sys.stderr.flush()
         #
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
@@ -559,6 +565,7 @@ if __name__ == "__main__":
         umls_conf = [line.split(",") \
                         for line in fconf.read().splitlines() \
                             if len(line) > 0]
+        umls_conf = filter(lambda x: not x[0].startswith("#"), umls_conf)
         fconf.close()
 
     if not os.path.isdir(conf.OUTPUT_FOLDER):
