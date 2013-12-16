@@ -117,12 +117,6 @@ def __get_connection():
     return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
               passwd=conf.DB_PASS,db=conf.DB_NAME)
 
-def orphan_class():
-    return """umls:UMLSOrphanClass a owl:Class ;
-\tskos:prefLabel "UMLS Orphan Branch"@en;
-\trdfs:subClassOf owl:Thing .
-"""
-
 def generate_semantic_types(con,url,fileout):
     hierarchy = collections.defaultdict(lambda : list()) 
     all_nodes = list()
@@ -220,7 +214,6 @@ class UmlsClass(object):
         self.sty_by_cui = sty_by_cui
         self.load_on_cuis = load_on_cuis
         self.is_root = is_root
-        self.orphan = False
 
     def code(self):
         codes = set([get_code(x,self.load_on_cuis) for x in self.atoms])
@@ -311,10 +304,6 @@ class UmlsClass(object):
                 p = self.getURLTerm(get_rel_fragment(rel))
                 o = self.getURLTerm(target_code)
                 rdf_term += "\t<%s> <%s> ;\n" % (p,o)
-
-        if count_parents == 0:
-            rdf_term += "\trdfs:subClassOf umls:OrphanClass;\n"
-            self.orphan = True
 
         for att in self.atts:
             atn = att[MRSAT_ATN]
@@ -545,13 +534,8 @@ class UmlsOntology(object):
            uri = self.ns
         )
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
-        write_orphan_class = False
         for term in self.terms():
             fout.write(term.toRDF())
-            if term.orphan:
-                write_orphan_class = True
-        if write_orphan_class:
-            fout.write(orphan_class())
         fout.close()
 
 
