@@ -117,12 +117,11 @@ def __get_connection():
     return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
               passwd=conf.DB_PASS,db=conf.DB_NAME)
 
-def generate_semantic_types(con,url,fileout):
+def generate_semantic_types(con,url):
     hierarchy = collections.defaultdict(lambda : list()) 
     all_nodes = list()
     mrsty = UmlsTable("MRSTY",con,load_select="SELECT DISTINCT TUI, STN, STY FROM MRSTY")
     ont = list()
-    ont.append(PREFIXES)
 
     for stt in mrsty.scan():
         hierarchy[stt[1]].append(stt[0])
@@ -139,10 +138,7 @@ def generate_semantic_types(con,url,fileout):
         for sc in rdfs_subclasses:
             ont.append(sc)
     data_ont_ttl = "\n".join(ont)
-    with open(fileout,"w") as fout:
-        fout.write(data_ont_ttl)
-        fout.write("\n")
-        fout.close()
+    return data_ont_ttl
 
 
 
@@ -500,6 +496,7 @@ class UmlsOntology(object):
                     # TODO: Check use of CUI1 (target) or CUI2 (source) here:
                     if rel[MRREL_CUI1] in self.cui_roots:
                         is_root = True
+
                     if len(code_source) <> 1 or len(code_target) > 1:
                         raise AttributeError, "more than one or none codes"
                     if len(code_source) == 1 and len(code_target) == 1 and \
@@ -540,7 +537,11 @@ class UmlsOntology(object):
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
             fout.write(term.toRDF())
-        fout.close()
+
+    def write_semantic_types(sem_types,fileout):
+        with open(fileout,"w") as fout:
+            fout.write(sem_types)
+            fout.write("\n")
 
 
 
@@ -559,6 +560,7 @@ if __name__ == "__main__":
     if not os.path.isdir(conf.OUTPUT_FOLDER):
         raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
     
+    sem_types = generate_semantic_types(con,STY_URL)
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
         if ";" in umls_code:
@@ -573,11 +575,12 @@ if __name__ == "__main__":
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
         ont.load_tables()
         ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
+        ont.write_semantic_types(sem_types,output_file)
+        output_file.close()
         sys.stdout.write("done!\n\n")
         sys.stdout.flush()
    
     output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
-    generate_semantic_types(con,STY_URL,output_file)
     sys.stdout.write("generate MRDOC at global/UMLS level\n")
     sys.stdout.flush()
 
