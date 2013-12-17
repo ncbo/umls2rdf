@@ -537,11 +537,11 @@ class UmlsOntology(object):
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
             fout.write(term.toRDF())
+        return fout
 
-    def write_semantic_types(sem_types,fileout):
-        with open(fileout,"w") as fout:
-            fout.write(sem_types)
-            fout.write("\n")
+    def write_semantic_types(self,sem_types,fout):
+        fout.write(sem_types)
+        fout.write("\n")
 
 
 
@@ -574,9 +574,9 @@ if __name__ == "__main__":
         ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
         ont.load_tables()
-        ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
-        ont.write_semantic_types(sem_types,output_file)
-        output_file.close()
+        fout = ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
+        ont.write_semantic_types(sem_types,fout)
+        fout.close()
         sys.stdout.write("done!\n\n")
         sys.stdout.flush()
    
