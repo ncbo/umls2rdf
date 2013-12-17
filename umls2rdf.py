@@ -283,6 +283,10 @@ class UmlsClass(object):
         if self.is_root: 
             rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
+        # TODO: patch to fix ICD10-CM hierachy.
+        if self.code() == "ICD-10-CM":
+            rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
+
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s ;
 """%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
