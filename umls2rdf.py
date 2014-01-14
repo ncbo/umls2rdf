@@ -244,6 +244,10 @@ class UmlsClass(object):
             is_pref_atoms =  filter(lambda x: x[MRCONSO_STT] == 'PF', self.atoms)
             if len(is_pref_atoms) == 1:
                 return is_pref_atoms[0][MRCONSO_STR]
+            elif len(is_pref_atoms) > 1:
+                is_pref_atoms =  filter(lambda x: x[MRCONSO_TTY][0] == 'P', self.atoms)
+                if len(is_pref_atoms) == 1:
+                    return is_pref_atoms[0][MRCONSO_STR]
             return self.atoms[0][MRCONSO_STR]
         else:
             #if ISPREF=Y is not 1 then we look into MRRANK.
