@@ -514,13 +514,16 @@ class UmlsOntology(object):
                         rel_with_codes.append(code_target)
                         rel_with_codes.append(code_source)
                         rels_to_class.append(rel_with_codes)
-            defs = [self.defs[x] for x in self.defs_by_aui[_id] for _id in ids]
+            aui_codes_def = [self.defs_by_aui[_id] for _id in ids]
+            aui_codes_def = [item for sublist in aui_codes_def for item in sublist]
+            defs = [self.defs[index] for index in aui_codes_def]
             atts = [self.atts[x] for x in self.atts_by_code[code]]
 
-            yield UmlsClass(self.ns,atoms=code_atoms,rels=rels_to_class,
+            umls_class = UmlsClass(self.ns,atoms=code_atoms,rels=rels_to_class,
                 defs=defs,atts=atts,rank=self.rank,rank_by_tty=self.rank_by_tty,
                 sty=self.sty, sty_by_cui=self.sty_by_cui,
                 load_on_cuis=self.load_on_cuis,is_root=is_root)
+            yield umls_class
 
     def write_into(self,file_path,hierarchy=True):
         sys.stdout.write("%s writing terms ... %s\n" % (self.ont_code, file_path))
