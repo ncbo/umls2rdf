@@ -524,6 +524,11 @@ class UmlsOntology(object):
             # TODO: patch to fix ICD10-CM hierachy.
             if umls_class.code() == "ICD-10-CM":
                 umls_class.is_root = True
+
+            # TODO: patch to fix roots in SNOMED-CT
+            if self.ont_code == "SNOMEDCT_US":
+                umls_class.is_root == (umls_class.code() == "138875005")
+
             yield umls_class
 
     def write_into(self,file_path,hierarchy=True):
