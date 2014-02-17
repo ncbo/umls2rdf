@@ -280,11 +280,8 @@ class UmlsClass(object):
         if len(altLabels) > 0:
             rdf_term += """\tskos:altLabel %s ;
 """%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
-        if self.is_root: 
-            rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
-        # TODO: patch to fix ICD10-CM hierachy.
-        if self.code() == "ICD-10-CM":
+        if self.is_root:
             rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
         if len(self.defs) > 0:
@@ -523,6 +520,10 @@ class UmlsOntology(object):
                 defs=defs,atts=atts,rank=self.rank,rank_by_tty=self.rank_by_tty,
                 sty=self.sty, sty_by_cui=self.sty_by_cui,
                 load_on_cuis=self.load_on_cuis,is_root=is_root)
+
+            # TODO: patch to fix ICD10-CM hierachy.
+            if umls_class.code() == "ICD-10-CM":
+                umls_class.is_root = True
             yield umls_class
 
     def write_into(self,file_path,hierarchy=True):
