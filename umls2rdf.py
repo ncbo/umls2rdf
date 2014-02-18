@@ -527,7 +527,7 @@ class UmlsOntology(object):
 
             # TODO: patch to fix roots in SNOMED-CT
             if self.ont_code == "SNOMEDCT_US":
-                umls_class.is_root == (umls_class.code() == "138875005")
+                umls_class.is_root = (umls_class.code() == "138875005")
 
             yield umls_class
 
