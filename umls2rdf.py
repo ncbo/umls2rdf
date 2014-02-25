@@ -408,7 +408,7 @@ class UmlsOntology(object):
 
         #
         mrrel = UmlsTable("MRREL",self.con)
-        mrrel_filt = "SAB = '%s'"%self.ont_code
+        mrrel_filt = "SAB = '%s' AND SUPPRESS = 'N'"%self.ont_code
         field = MRREL_AUI2 if not self.load_on_cuis else MRREL_CUI2
         for rel in mrrel.scan(filt=mrrel_filt,limit=limit):
             index = len(self.rels)
