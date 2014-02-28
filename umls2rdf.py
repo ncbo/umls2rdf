@@ -386,7 +386,7 @@ class UmlsOntology(object):
             if self.ont_code.endswith(other):
                 lat = other
 
-        mrconso_filt = "SAB = '%s' AND lat = '%s'"%(self.ont_code,lat)
+        mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(self.ont_code,lat)
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
             index = len(self.atoms)
             self.atoms_by_code[get_code(atom,self.load_on_cuis)].append(index)
