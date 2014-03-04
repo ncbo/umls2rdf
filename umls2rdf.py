@@ -142,6 +142,7 @@ def generate_semantic_types(con,url):
 
 
 
+
 class UmlsTable(object):
     def __init__(self,table_name,conn,load_select=None):
         self.table_name = table_name
@@ -495,8 +496,12 @@ class UmlsOntology(object):
                     code_target = [ get_code(self.atoms[x],self.load_on_cuis) \
                                         for x in self.atoms_by_aui[aui_target] ]
                     # TODO: Check use of CUI1 (target) or CUI2 (source) here:
-                    if rel[MRREL_CUI1] in self.cui_roots:
+                    if (rel[MRREL_CUI1] in self.cui_roots) and rel[MRREL_REL] == "CHD":
                         is_root = True
+                    elif self.ont_code == "ICD10CM":
+                        # TODO: patch to fix ICD10-CM hierachy.
+                        if rel[MRREL_CUI1] == "C3264380" and rel[MRREL_REL] == "CHD":
+                            is_root = True
 
                     if len(code_source) <> 1 or len(code_target) > 1:
                         raise AttributeError, "more than one or none codes"
@@ -521,13 +526,10 @@ class UmlsOntology(object):
                 sty=self.sty, sty_by_cui=self.sty_by_cui,
                 load_on_cuis=self.load_on_cuis,is_root=is_root)
 
-            # TODO: patch to fix ICD10-CM hierachy.
-            if umls_class.code() == "ICD-10-CM":
-                umls_class.is_root = True
-
             # TODO: patch to fix roots in SNOMED-CT
-            if self.ont_code == "SNOMEDCT_US":
-                umls_class.is_root = (umls_class.code() == "138875005")
+            # suppress should fix this one
+            #if self.ont_code == "SNOMEDCT_US":
+            #    umls_class.is_root = (umls_class.code() == "138875005")
 
             yield umls_class
 
