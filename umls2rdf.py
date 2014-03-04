@@ -451,7 +451,7 @@ class UmlsOntology(object):
             sys.stderr.flush()
         #
         load_mrsty = "SELECT sty.* FROM MRSTY sty, MRCONSO conso \
-        WHERE conso.SAB = '%s' AND conso.cui = sty.cui"
+        WHERE conso.SAB = '%s' AND conso.cui = sty.cui AND conso.suppress = 'N'"
         load_mrsty %= self.ont_code
         mrsty = UmlsTable("MRSTY",self.con,load_select=load_mrsty)
         for sty in mrsty.scan(filt=None):
