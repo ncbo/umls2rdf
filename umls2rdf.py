@@ -234,7 +234,6 @@ class UmlsClass(object):
             if len(labels) == 1:
                 return labels.pop()
 
-            #if there's only one ISPREF=Y then that one.
             is_pref_atoms =  filter(lambda x: x[MRCONSO_ISPREF] == 'Y', self.atoms)
             if len(is_pref_atoms) == 1:
                 return is_pref_atoms[0][MRCONSO_STR]
