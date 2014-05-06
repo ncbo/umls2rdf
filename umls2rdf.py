@@ -117,7 +117,7 @@ def __get_connection():
     return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
               passwd=conf.DB_PASS,db=conf.DB_NAME)
 
-def generate_semantic_types(con,url):
+def generate_semantic_types(con,with_roots=False):
     hierarchy = collections.defaultdict(lambda : list()) 
     all_nodes = list()
     mrsty = UmlsTable("MRSTY",con,load_select="SELECT DISTINCT TUI, STN, STY FROM MRSTY")
@@ -575,7 +575,7 @@ if __name__ == "__main__":
     if not os.path.isdir(conf.OUTPUT_FOLDER):
         raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
     
-    sem_types = generate_semantic_types(con,STY_URL)
+    sem_types = generate_semantic_types(con,with_roots=True)
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
         if ";" in umls_code:
