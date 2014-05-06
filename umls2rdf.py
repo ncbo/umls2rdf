@@ -14,7 +14,6 @@ import pdb
 try:
     import conf
 except:
-    sys.stdout.write("Copy and modify conf_sample.py into conf.py\n")
     raise
 
 PREFIXES = """
@@ -579,6 +578,13 @@ if __name__ == "__main__":
         raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
     
     sem_types = generate_semantic_types(con,with_roots=True)
+    output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
+    with open(output_file,"w") as semfile:
+        semfile.write(PREFIXES)
+        semfile.write(sem_types)
+        semfile.flush()
+        semfile.close()
+    sem_types = generate_semantic_types(con,with_roots=False)
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
         if ";" in umls_code:
@@ -597,8 +603,5 @@ if __name__ == "__main__":
         fout.close()
         sys.stdout.write("done!\n\n")
         sys.stdout.flush()
-   
-    output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
-    sys.stdout.write("generate MRDOC at global/UMLS level\n")
     sys.stdout.flush()
 
