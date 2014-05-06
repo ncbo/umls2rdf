@@ -118,6 +118,7 @@ def __get_connection():
               passwd=conf.DB_PASS,db=conf.DB_NAME)
 
 def generate_semantic_types(con,with_roots=False):
+    url = get_umls_url("STY")
     hierarchy = collections.defaultdict(lambda : list()) 
     all_nodes = list()
     mrsty = UmlsTable("MRSTY",con,load_select="SELECT DISTINCT TUI, STN, STY FROM MRSTY")
@@ -135,6 +136,8 @@ def generate_semantic_types(con,with_roots=False):
     for node in all_nodes:
         parent = ".".join(node[1].split(".")[0:-1])
         rdfs_subclasses = ["<%s> rdfs:subClassOf <%s> ."%(url+node[0],url+x) for x in hierarchy[parent]]
+        if len(rdfs_subclasses) == 0 and with_roots:
+            rdfs_subclasses = ["<%s> rdfs:subClassOf owl:Thing ."%(url+node[0])]
         for sc in rdfs_subclasses:
             ont.append(sc)
     data_ont_ttl = "\n".join(ont)
@@ -331,7 +334,7 @@ class UmlsClass(object):
         for t in set(types):
             rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_TUI,t)
         for t in set(types):
-            rdf_term += """\t%s <%s> ;\n"""%(HAS_STY,STY_URL+t)
+            rdf_term += """\t%s <%s> ;\n"""%(HAS_STY,get_umls_url("STY")+t)
 
         return rdf_term + " .\n\n"
 
