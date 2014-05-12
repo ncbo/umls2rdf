@@ -133,10 +133,22 @@ def generate_semantic_types(con,with_roots=False):
         all_nodes.append(stt)
     
     for node in all_nodes:
-        parent = ".".join(node[1].split(".")[0:-1])
-        rdfs_subclasses = ["<%s> rdfs:subClassOf <%s> ."%(url+node[0],url+x) for x in hierarchy[parent]]
+       #parent = ".".join(node[1].split(".")[0:-1])
+        parent = node[1]
+
+
+        #[Physical object] subClassOf [Entity]
+        #A1 --> A
+        # the general case does not apply to first level tree
+        if len(parent) <= 2:
+            parent = parent[0:-1]
+
+        rdfs_subclasses = ["<%s> rdfs:subClassOf <%s> ."%(url+node[0],url+x) 
+                                                        for x in hierarchy[parent]]
         if len(rdfs_subclasses) == 0 and with_roots:
             rdfs_subclasses = ["<%s> rdfs:subClassOf owl:Thing ."%(url+node[0])]
+            pdb.set_trace()
+
         for sc in rdfs_subclasses:
             ont.append(sc)
     data_ont_ttl = "\n".join(ont)
@@ -584,6 +596,7 @@ if __name__ == "__main__":
         semfile.write(sem_types)
         semfile.flush()
         semfile.close()
+
     sem_types = generate_semantic_types(con,with_roots=False)
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
