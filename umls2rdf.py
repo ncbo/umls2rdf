@@ -147,7 +147,6 @@ def generate_semantic_types(con,with_roots=False):
                                                         for x in hierarchy[parent]]
         if len(rdfs_subclasses) == 0 and with_roots:
             rdfs_subclasses = ["<%s> rdfs:subClassOf owl:Thing ."%(url+node[0])]
-            pdb.set_trace()
 
         for sc in rdfs_subclasses:
             ont.append(sc)
