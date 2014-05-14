@@ -92,7 +92,7 @@ def get_url_term(ns,code):
         ret = ns + urllib.quote(code)
     else:
         ret = "%s/%s"%(ns,urllib.quote(code))
-    return ret.replace("%20","+") 
+    return ret
 
 def get_rel_fragment(rel):
     return rel[MRREL_RELA] if rel[MRREL_RELA] else rel[MRREL_REL]
