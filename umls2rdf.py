@@ -314,6 +314,12 @@ class UmlsClass(object):
             if rel[MRREL_REL] == 'CHD' and hierarchy:
                 o = self.getURLTerm(target_code)
                 count_parents += 1
+                if target_code == "ICD-10-CM":
+                    #skip bogus ICD10CM parent
+                    continue
+                if target_code == "138875005":
+                    #skip bogus SNOMED root concept
+                    continue
                 rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
             else:
                 p = self.getURLTerm(get_rel_fragment(rel))
