@@ -2,6 +2,7 @@
 
 DEBUG = False
 
+import codecs
 import sys
 import os
 import urllib
@@ -114,7 +115,7 @@ def get_code(reg,load_on_cuis):
 
 def __get_connection():
     return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
-              passwd=conf.DB_PASS,db=conf.DB_NAME)
+              passwd=conf.DB_PASS,db=conf.DB_NAME,charset='utf8',use_unicode=True)
 
 def generate_semantic_types(con,with_roots=False):
     url = get_umls_url("STY")
@@ -418,7 +419,7 @@ class UmlsOntology(object):
             sys.stderr.write("length atoms_by_aui: %d\n" % len(self.atoms_by_aui))
             sys.stderr.write("atom example: %s\n\n" % str(self.atoms))
             sys.stderr.flush()
-        #
+
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
             self.cui_roots.add(atom[MRCONSO_CUI])
@@ -555,7 +556,7 @@ class UmlsOntology(object):
     def write_into(self,file_path,hierarchy=True):
         sys.stdout.write("%s writing terms ... %s\n" % (self.ont_code, file_path))
         sys.stdout.flush()
-        fout = file(file_path,"w")
+        fout = codecs.open(file_path,"w","utf-8")
         #nterms = len(self.atoms_by_code)
         fout.write(PREFIXES)
         comment = "RDF Version of the UMLS ontology %s; " +\
@@ -570,7 +571,7 @@ class UmlsOntology(object):
         )
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
-            fout.write(term.toRDF())
+            fout.write(term.toRDF().encode('iso8859-1').decode('utf8'))
         return fout
 
     def write_semantic_types(self,sem_types,fout):
@@ -596,7 +597,7 @@ if __name__ == "__main__":
     
     sem_types = generate_semantic_types(con,with_roots=True)
     output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
-    with open(output_file,"w") as semfile:
+    with codecs.open(output_file,"w","utf-8") as semfile:
         semfile.write(PREFIXES)
         semfile.write(sem_types)
         semfile.flush()
