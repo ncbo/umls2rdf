@@ -79,6 +79,8 @@ MRRANK_RANK = 0
 MRSTY_CUI = 0
 MRSTY_TUI = 1
 
+MRSAB_LAT = 19
+
 def get_umls_url(code):
     return "http://purl.bioontology.org/ontology/%s/"%code
 
@@ -281,7 +283,7 @@ class UmlsClass(object):
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
     
-    def toRDF(self,fmt="Turtle",hierarchy=True):
+    def toRDF(self,fmt="Turtle",hierarchy=True,lang="eng"):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
         term_code = self.code()
@@ -289,19 +291,22 @@ class UmlsClass(object):
         prefLabel = self.getPrefLabel()
         altLabels = self.getAltLabels(prefLabel)
         rdf_term = """<%s> a owl:Class ;
-\tskos:prefLabel \"\"\"%s\"\"\"@en ;
+\tskos:prefLabel \"\"\"%s\"\"\"@%s ;
 \tskos:notation \"\"\"%s\"\"\"^^xsd:string ;
-"""%(url_term,escape(prefLabel),escape(term_code))
+"""%(url_term,escape(prefLabel),lang,escape(term_code))
+
         if len(altLabels) > 0:
             rdf_term += """\tskos:altLabel %s ;
-"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x),set(altLabels))))
+"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@%s'%(escape(x),lang),
+                                                            set(altLabels))))
 
         if self.is_root:
             rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s ;
-"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@en'%escape(x[MRDEF_DEF]),set(self.defs))))
+"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@%s'%(escape(x[MRDEF_DEF]),lang),
+                                                                set(self.defs))))
 
         count_parents = 0
         for rel in self.rels:
@@ -398,16 +403,15 @@ class UmlsOntology(object):
         self.sty = list()
         self.sty_by_cui = collections.defaultdict(lambda : list())
         self.cui_roots = set()
+        self.lang = None
 
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
-        lat = "ENG"
-        other_langs = ["FRE","SPA","GER","POR"]
-        for other in other_langs:
-            if self.ont_code.endswith(other):
-                lat = other
-
-        mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(self.ont_code,lat)
+        mrsab  = UmlsTable("MRSAB", self.con)
+        for sab_rec in mrsab.scan(filt="RSAB = '" + self.ont_code + "'", limit=1):
+            self.lang = sab_rec[MRSAB_LAT].lower()
+        mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(
+                                                    self.ont_code,self.lang)
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
             index = len(self.atoms)
             self.atoms_by_code[get_code(atom,self.load_on_cuis)].append(index)
@@ -571,7 +575,8 @@ class UmlsOntology(object):
         )
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
-            fout.write(term.toRDF().encode('iso8859-1').decode('utf8'))
+            fout.write(
+                term.toRDF(lang=self.lang).encode('iso8859-1').decode('utf8'))
         return fout
 
     def write_semantic_types(self,sem_types,fout):
