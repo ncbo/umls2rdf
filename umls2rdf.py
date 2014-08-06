@@ -123,7 +123,8 @@ def generate_semantic_types(con,with_roots=False):
     url = get_umls_url("STY")
     hierarchy = collections.defaultdict(lambda : list()) 
     all_nodes = list()
-    mrsty = UmlsTable("MRSTY",con,load_select="SELECT DISTINCT TUI, STN, STY FROM MRSTY")
+    mrsty = UmlsTable("MRSTY",con,
+                load_select="SELECT DISTINCT TUI, STN, STY FROM MRSTY")
     ont = list()
 
     for stt in mrsty.scan():
@@ -136,14 +137,10 @@ def generate_semantic_types(con,with_roots=False):
         all_nodes.append(stt)
     
     for node in all_nodes:
-       #parent = ".".join(node[1].split(".")[0:-1])
         parent = node[1]
-
-
-        #[Physical object] subClassOf [Entity]
-        #A1 --> A
-        # the general case does not apply to first level tree
-        if len(parent) <= 2:
+        if "." in parent:
+           parent = ".".join(node[1].split(".")[0:-1])
+        else:
             parent = parent[0:-1]
 
         rdfs_subclasses = ["<%s> rdfs:subClassOf <%s> ."%(url+node[0],url+x) 
