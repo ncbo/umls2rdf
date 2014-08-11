@@ -382,7 +382,7 @@ class UmlsAttribute(object):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
         _type = ""
-        if "REL" in _type:
+        if "REL" in dockey:
             _type = "ObjectProperty"
         elif dockey == "ATN":
             _type = "DatatypeProperty"
