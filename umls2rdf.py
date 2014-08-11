@@ -69,6 +69,7 @@ MRSAT_CODE = 5
 MRSAT_ATV = 10
 MRSAT_ATN = 8
 
+MRDOC_DOCKEY = 0
 MRDOC_VALUE = 1
 MRDOC_TYPE = 2
 MRDOC_DESC = 3
@@ -224,6 +225,7 @@ class UmlsClass(object):
         self.sty_by_cui = sty_by_cui
         self.load_on_cuis = load_on_cuis
         self.is_root = is_root
+        self.class_properties = dict()
 
     def code(self):
         codes = set([get_code(x,self.load_on_cuis) for x in self.atoms])
@@ -280,6 +282,9 @@ class UmlsClass(object):
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
     
+    def properties(self):
+        return self.class_properties
+
     def toRDF(self,fmt="Turtle",hierarchy=True,lang="eng"):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
@@ -328,6 +333,9 @@ class UmlsClass(object):
                 p = self.getURLTerm(get_rel_fragment(rel))
                 o = self.getURLTerm(target_code)
                 rdf_term += "\t<%s> <%s> ;\n" % (p,o)
+                if p not in self.class_properties:
+                    self.class_properties[p] = \
+                        UmlsAttribute(p,get_rel_fragment(rel))
 
         for att in self.atts:
             atn = att[MRSAT_ATN]
@@ -339,7 +347,10 @@ class UmlsClass(object):
                 #  sys.stderr.write("att: %s\n" % str(att))
                 #  sys.stderr.flush()
                 continue
-            rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n" % (self.getURLTerm(atn), escape(atv))
+            p = self.getURLTerm(atn)
+            rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n"%(p, escape(atv))
+            if p not in self.class_properties:
+                self.class_properties[p] = UmlsAttribute(p,atn)
 
         #auis = set([x[MRCONSO_AUI] for x in self.atoms])
         cuis = set([x[MRCONSO_CUI] for x in self.atoms])
@@ -360,20 +371,35 @@ class UmlsClass(object):
 
 
 class UmlsAttribute(object):
-    def __init__(self,ns,att):
-        self.ns = ns
+    def __init__(self,uri,att):
+        self.uri = uri
         self.att = att
 
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
 
-    def toRDF(self,fmt="Turtle"):
+    def toRDF(self,dockey,desc,fmt="Turtle"):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
-        return """<%s> a owl:DatatypeProperty ;
+        _type = ""
+        if dockey == "RELA":
+            _type = "ObjectProperty"
+        elif dockey == "ATN":
+            _type = "DatatypeProperty"
+        else:
+            raise AttributeError, ("Unknown DOCKEY" + dockey)
+
+        label = self.att
+        if len(desc) < 20:
+            label = desc
+        if "_" in label:
+            label = " ".join(self.att.split("_"))
+            label = label[0].upper() + label[1:]
+
+        return """<%s> a owl:%s ;
 \trdfs:label \"\"\"%s\"\"\";
 \trdfs:comment \"\"\"%s\"\"\" .
-\n"""%(self.getURLTerm(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_VALUE]),escape(self.att[MRDOC_DESC]))
+\n"""%(self.uri,_type,label,escape(desc))
 
 
 
@@ -401,6 +427,7 @@ class UmlsOntology(object):
         self.sty_by_cui = collections.defaultdict(lambda : list())
         self.cui_roots = set()
         self.lang = None
+        self.ont_properties = dict()
 
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
@@ -574,7 +601,28 @@ class UmlsOntology(object):
         for term in self.terms():
             fout.write(
                 term.toRDF(lang=self.lang).encode('iso8859-1').decode('utf8'))
+            for att in term.properties():
+                if att not in self.ont_properties:
+                    self.ont_properties[att] = term.properties()[att]
+
         return fout
+
+    def properties(self):
+        return self.ont_properties
+
+    def write_properties(self,fout,property_docs):
+        for p in self.ont_properties:
+            prop = self.ont_properties[p]
+            doc = property_docs[prop.att]
+            if "expanded_form" not in doc:
+                raise AttributeError, "expanded form not found in " + doc
+            _desc = doc["expanded_form"]
+            if "inverse" in doc:
+                _desc = "Inverse of " + doc["inverse"]
+
+            _dockey = doc["dockey"]
+                
+            fout.write(prop.toRDF(_dockey,_desc))
 
     def write_semantic_types(self,sem_types,fout):
         fout.write(sem_types)
@@ -606,6 +654,19 @@ if __name__ == "__main__":
         semfile.close()
 
     sem_types = generate_semantic_types(con,with_roots=False)
+    mrdoc = UmlsTable("MRDOC", con)
+    property_docs = dict()
+    for doc_record in mrdoc.scan():
+        _type = doc_record[MRDOC_TYPE]
+        _expl = doc_record[MRDOC_DESC]
+        _key = doc_record[MRDOC_VALUE]
+        if _key not in property_docs:
+            property_docs[_key] = dict()
+            property_docs[_key]["dockey"] = doc_record[MRDOC_DOCKEY]
+        if "inverse" in _type:
+            _type = "inverse"
+        property_docs[_key][_type] = _expl
+
     for (umls_code, vrt_id, file_out, load_on_field) in umls_conf:
         alt_uri_code = None
         if ";" in umls_code:
@@ -620,6 +681,7 @@ if __name__ == "__main__":
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
         ont.load_tables()
         fout = ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
+        ont.write_properties(fout,property_docs)
         ont.write_semantic_types(sem_types,fout)
         fout.close()
         sys.stdout.write("done!\n\n")
