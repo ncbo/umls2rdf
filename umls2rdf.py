@@ -599,8 +599,12 @@ class UmlsOntology(object):
         )
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
-            fout.write(
-                term.toRDF(lang=self.lang).encode('iso8859-1').decode('utf8'))
+            try:
+                rdf_text = term.toRDF(lang=self.lang)
+                fout.write(rdf_text)
+            except Exception, e:
+                print "ERROR dumping term ", e
+
             for att in term.properties():
                 if att not in self.ont_properties:
                     self.ont_properties[att] = term.properties()[att]
