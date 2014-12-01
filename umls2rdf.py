@@ -679,7 +679,8 @@ if __name__ == "__main__":
             continue
         load_on_cuis = load_on_field == "load_on_cuis"
         output_file = os.path.join(conf.OUTPUT_FOLDER,file_out)
-        sys.stdout.write("Generating %s (virtual_id: %s, using '%s')\n" % (umls_code,vrt_id,load_on_field))
+        sys.stdout.write("Generating %s (virtual_id: %s, using '%s')\n" %
+                (umls_code,vrt_id,load_on_field))
         sys.stdout.flush()
         ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
