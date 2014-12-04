@@ -378,6 +378,15 @@ class UmlsAttribute(object):
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
 
+    def toRDFWithDesc(self,label,desc,_type):
+        uri_rdf = self.uri
+        if self.uri.startswith("http"):
+            uri_rdf = "<%s>"%self.uri
+        return """%s a owl:%s ;
+    \trdfs:label \"\"\"%s\"\"\";
+    \trdfs:comment \"\"\"%s\"\"\" .
+    \n"""%(uri_rdf,_type,label,escape(desc))
+
     def toRDF(self,dockey,desc,fmt="Turtle"):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
@@ -615,8 +624,16 @@ class UmlsOntology(object):
         return self.ont_properties
 
     def write_properties(self,fout,property_docs):
+        self.ont_properties["hasSTY"] =\
+                UmlsAttribute(HAS_STY,"hasSTY")
         for p in self.ont_properties:
             prop = self.ont_properties[p]
+            if "hasSTY"  in p:
+                fout.write(prop.toRDFWithDesc(
+                    "Semantic type UMLS property",
+                    "Semantic type UMLS property",
+                    "ObjectProperty"))
+                continue
             doc = property_docs[prop.att]
             if "expanded_form" not in doc:
                 raise AttributeError, "expanded form not found in " + doc
@@ -625,7 +642,6 @@ class UmlsOntology(object):
                 _desc = "Inverse of " + doc["inverse"]
 
             _dockey = doc["dockey"]
-                
             fout.write(prop.toRDF(_dockey,_desc))
 
     def write_semantic_types(self,sem_types,fout):
