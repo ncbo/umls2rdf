@@ -332,6 +332,9 @@ class UmlsClass(object):
                 if target_code == "138875005":
                     #skip bogus SNOMED root concept
                     continue
+                if target_code == "V-HL7V3.0" or target_code == "C1553931":
+                    #skip bogus HL7V3.0 root concept
+                    continue
                 rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
             else:
                 p = self.getURLTerm(get_rel_fragment(rel))
