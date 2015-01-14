@@ -122,7 +122,7 @@ def __get_connection():
 
 def generate_semantic_types(con,with_roots=False):
     url = get_umls_url("STY")
-    hierarchy = collections.defaultdict(lambda : list()) 
+    hierarchy = collections.defaultdict(lambda : list())
     all_nodes = list()
     mrsty = UmlsTable("MRSTY",con,
                 load_select="SELECT DISTINCT TUI, STN, STY FROM MRSTY")
@@ -136,7 +136,7 @@ def generate_semantic_types(con,with_roots=False):
 """%(url+stt[0],stt[0],stt[2])
         ont.append(sty_term)
         all_nodes.append(stt)
-    
+
     for node in all_nodes:
         parent = node[1]
         if "." in parent:
@@ -144,10 +144,14 @@ def generate_semantic_types(con,with_roots=False):
         else:
             parent = parent[0:-1]
 
-        rdfs_subclasses = ["<%s> rdfs:subClassOf <%s> ."%(url+node[0],url+x) 
-                                                        for x in hierarchy[parent]]
+        rdfs_subclasses = []
+        for x in hierarchy[parent]:
+            if node[0] != x:
+                rdfs_subclasses.append(
+                        "<%s> rdfs:subClassOf <%s> ."%(url+node[0],url+x))
+
         if len(rdfs_subclasses) == 0 and with_roots:
-            rdfs_subclasses = ["<%s> rdfs:subClassOf owl:Thing ."%(url+node[0])]
+                rdfs_subclasses = ["<%s> rdfs:subClassOf owl:Thing ."%(url+node[0])]
 
         for sc in rdfs_subclasses:
             ont.append(sc)
@@ -239,7 +243,7 @@ class UmlsClass(object):
     def getAltLabels(self,prefLabel):
         #is_pref_atoms =  filter(lambda x: x[MRCONSO_ISPREF] == 'Y', self.atoms)
         return set([atom[MRCONSO_STR] for atom in self.atoms if atom[MRCONSO_STR] <> prefLabel])
-        
+
     def getPrefLabel(self):
         if self.load_on_cuis:
             if len(self.atoms) == 1:
@@ -278,10 +282,10 @@ class UmlsClass(object):
                 if len(pref_atom) == 1:
                     return pref_atom[0][MRCONSO_STR]
             raise AttributeError, "Unable to select pref label"
-    
+
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
-    
+
     def properties(self):
         return self.class_properties
 
@@ -488,7 +492,7 @@ class UmlsOntology(object):
             sys.stderr.flush()
         #
         mrsat = UmlsTable("MRSAT",self.con)
-        mrsat_filt = "SAB = '%s' AND CODE IS NOT NULL"%self.ont_code 
+        mrsat_filt = "SAB = '%s' AND CODE IS NOT NULL"%self.ont_code
         field = MRSAT_CODE if not self.load_on_cuis else MRSAT_CUI
         for att in mrsat.scan(filt=mrsat_filt):
             index = len(self.atts)
@@ -499,7 +503,7 @@ class UmlsOntology(object):
             sys.stderr.flush()
         #
         mrrank = UmlsTable("MRRANK",self.con)
-        mrrank_filt = "SAB = '%s'"%self.ont_code 
+        mrrank_filt = "SAB = '%s'"%self.ont_code
         for rank in mrrank.scan(filt=mrrank_filt):
             index = len(self.rank)
             self.rank_by_tty[rank[MRRANK_TTY]].append(index)
@@ -529,8 +533,8 @@ class UmlsOntology(object):
             self.load_tables()
         # Note: most UMLS ontologies are 'load_on_codes' (only HL7 is load_on_cuis)
         for code in self.atoms_by_code:
-            code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]] 
-            field = MRCONSO_CUI if self.load_on_cuis else MRCONSO_AUI 
+            code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]]
+            field = MRCONSO_CUI if self.load_on_cuis else MRCONSO_AUI
             ids = map(lambda x: x[field], code_atoms)
             rels = list()
             for _id in ids:
@@ -653,7 +657,7 @@ class UmlsOntology(object):
 if __name__ == "__main__":
 
     con = __get_connection()
-    
+
     umls_conf = None
     with open("umls.conf","r") as fconf:
         umls_conf = [line.split(",") \
@@ -664,7 +668,7 @@ if __name__ == "__main__":
 
     if not os.path.isdir(conf.OUTPUT_FOLDER):
         raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
-    
+
     sem_types = generate_semantic_types(con,with_roots=True)
     output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
     with codecs.open(output_file,"w","utf-8") as semfile:
