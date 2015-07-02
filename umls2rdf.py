@@ -710,7 +710,8 @@ if __name__ == "__main__":
         ont.load_tables()
         fout = ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
         ont.write_properties(fout,property_docs)
-        ont.write_semantic_types(sem_types,fout)
+        if conf.INCLUDE_SEM_TYPES:
+        	ont.write_semantic_types(sem_types,fout)
         fout.close()
         sys.stdout.write("done!\n\n")
         sys.stdout.flush()
