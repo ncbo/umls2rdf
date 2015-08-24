@@ -83,7 +83,7 @@ MRSTY_TUI = 1
 MRSAB_LAT = 19
 
 def get_umls_url(code):
-    return "http://purl.bioontology.org/ontology/%s/"%code
+    return "%s%s/"%(conf.UMLS_BASE_URI,code)
 
 def flatten(matrix):
     return reduce(lambda x,y: x+y,matrix)

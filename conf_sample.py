@@ -9,3 +9,4 @@ DB_PASS = "your db pass"
 
 UMLS_VERSION = "2011ab"
 
+UMLS_BASE_URI = "http://purl.bioontology.org/ontology/"
