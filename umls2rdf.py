@@ -168,6 +168,24 @@ class UmlsTable(object):
         self.page_size = 500000
         self.load_select = load_select
 
+    def mesh_tree(self):
+        q = """select DISTINCT c1.code as parent, c2.code as child
+from MRREL r, MRCONSO c1, MRCONSO c2 where r.sab = 'MSH' and r.rel = 'CHD'
+and c1.cui = r.cui1
+and c2.cui = r.cui2
+and c2.code like 'D%'
+and c1.code like 'D%'
+and c1.sab = 'MSH'
+and c2.sab = 'MSH'
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(q)
+        result = cursor.fetchall()
+        edges = collections.defaultdict(set)
+        for record in result:
+            edges[record[1]].add(record[0])
+        return edges
+
     def count(self):
         q = "SELECT count(*) FROM %s"%self.table_name
         cursor = self.conn.cursor()
@@ -289,7 +307,7 @@ class UmlsClass(object):
     def properties(self):
         return self.class_properties
 
-    def toRDF(self,fmt="Turtle",hierarchy=True,lang="eng"):
+    def toRDF(self,fmt="Turtle",hierarchy=True,lang="eng",tree=None):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
         term_code = self.code()
@@ -315,6 +333,11 @@ class UmlsClass(object):
                                                                 set(self.defs))))
 
         count_parents = 0
+        if tree:
+            if term_code in tree:
+                for parent in tree[term_code]:
+                    o = self.getURLTerm(parent)
+                    rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
         for rel in self.rels:
             source_code = get_rel_code_source(rel,self.load_on_cuis)
             target_code = get_rel_code_target(rel,self.load_on_cuis)
@@ -335,7 +358,8 @@ class UmlsClass(object):
                 if target_code == "V-HL7V3.0" or target_code == "C1553931":
                     #skip bogus HL7V3.0 root concept
                     continue
-                rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
+                if not tree:
+                    rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
             else:
                 p = self.getURLTerm(get_rel_fragment(rel))
                 o = self.getURLTerm(target_code)
@@ -354,6 +378,10 @@ class UmlsClass(object):
                 #  sys.stderr.write("att: %s\n" % str(att))
                 #  sys.stderr.flush()
                 continue
+            #MESH ROOTS ONLY DESCRIPTORS
+            if tree and atn == "MN" and term_code.startswith("D"):
+                if len(atv.split(".")) == 1:
+                    rdf_term += "\trdfs:subClassOf owl:Thing;\n"
             p = self.getURLTerm(atn)
             rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n"%(p, escape(atv))
             if p not in self.class_properties:
@@ -447,6 +475,10 @@ class UmlsOntology(object):
 
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
+        if self.ont_code == 'MSH':
+            self.tree = mrconso.mesh_tree()
+        else:
+            self.tree = None
         mrsab  = UmlsTable("MRSAB", self.con)
         for sab_rec in mrsab.scan(filt="RSAB = '" + self.ont_code + "'", limit=1):
             self.lang = sab_rec[MRSAB_LAT].lower()
@@ -616,7 +648,7 @@ class UmlsOntology(object):
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
             try:
-                rdf_text = term.toRDF(lang=self.lang)
+                rdf_text = term.toRDF(lang=self.lang,tree=self.tree)
                 fout.write(rdf_text)
             except Exception, e:
                 print "ERROR dumping term ", e
