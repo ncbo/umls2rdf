@@ -10,4 +10,6 @@ The configuration file umls.conf must contain one ontology per line. The lines a
     (2) Output file name.
     (3) Conversion strategy. Accepted values (load_on_codes, load_on_cuis).
 
+Notice that  'CCS COSTAR DSM3R DSM4 DXP ICPC2ICD10ENG MCM MMSL MMX MTHCMSFRF MTHMST MTHSPL MTH NDFRT SNM' have no code and should not be loaded on loads_on_codes
+
 umls2rdf.py has been designed to be an off-line run-once process, it is a memory intensive process and exports all the default ontologies in umls.conf in 3h 30min. The ontologies listed in umls.conf are the UMLS ontologies accessible at bioportal.bioontology.org.
