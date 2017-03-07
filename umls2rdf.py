@@ -82,6 +82,8 @@ MRSTY_TUI = 1
 
 MRSAB_LAT = 19
 
+UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cz", "fin" : "fi", "ger" : "de", "ita" : "it", "jpn" : "jp", "pol" : "pl", "por" : "pt", "rus" : "ru", "spa" : "es", "swe" : "sw", "scr" : "hr", "dut" : "nl", "lav" : "lv", "hun" : "hu", "kor" : "kr", "dan" : "da", "nor" : "no", "heb" : "he", "baq" : "eu"}
+
 def get_umls_url(code):
     return "%s%s/"%(conf.UMLS_BASE_URI,code)
 
@@ -307,7 +309,7 @@ class UmlsClass(object):
     def properties(self):
         return self.class_properties
 
-    def toRDF(self,fmt="Turtle",hierarchy=True,lang="eng",tree=None):
+    def toRDF(self,fmt="Turtle",hierarchy=True,lang="en",tree=None):
         if not fmt == "Turtle":
             raise AttributeError, "Only fmt='Turtle' is currently supported"
         term_code = self.code()
@@ -648,7 +650,7 @@ class UmlsOntology(object):
         fout.write(ONTOLOGY_HEADER.substitute(header_values))
         for term in self.terms():
             try:
-                rdf_text = term.toRDF(lang=self.lang,tree=self.tree)
+                rdf_text = term.toRDF(lang=UMLS_LANGCODE_MAP[self.lang],tree=self.tree)
                 fout.write(rdf_text)
             except Exception, e:
                 print "ERROR dumping term ", e
