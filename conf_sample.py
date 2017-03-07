@@ -3,11 +3,11 @@ OUTPUT_FOLDER = "output"
 
 #DB Config
 DB_HOST = "your-host"
-DB_NAME = "umls2011ab"
+DB_NAME = "umls2015ab"
 DB_USER = "your db user"
 DB_PASS = "your db pass"
 
-UMLS_VERSION = "2011ab"
+UMLS_VERSION = "2015ab"
 
 # Define the base URI used to generate the concepts URI
 UMLS_BASE_URI = "http://purl.bioontology.org/ontology/"
