@@ -9,4 +9,8 @@ DB_PASS = "your db pass"
 
 UMLS_VERSION = "2015ab"
 
+# Define the base URI used to generate the concepts URI
 UMLS_BASE_URI = "http://purl.bioontology.org/ontology/"
+
+# Include the semantic type concepts for each Ontology file generated
+INCLUDE_SEMANTIC_TYPES = True
