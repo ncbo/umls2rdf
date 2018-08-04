@@ -20,7 +20,7 @@ umls2rdf.py is designed to be an offline, run-once process. It's memory intensiv
 
 If running a Windows 10 OS with MySQL, the following tips may be of help.
 
-- Install [MySQL 5.5] (https://dev.mysql.com/downloads/mysql/5.5.html#downloads) to avoid the InnoDB space [disclaimer] (https://www.nlm.nih.gov/research/umls/implementation_resources/scripts/README_RRF_MySQL_Output_Stream.html) by NLM. 
-- [Python 2.7.x] (https://www.python.org/downloads/) should be used to avoid syntax errors on 'raise Attribute'
-- For installtion of the MySQLdb module, <pre>python -m pip install MySQLdb</pre> doesn't seem to work. Install with executable [MySQL-python-1.2.3.win-amd64-py2.7.exe] (http://www.codegood.com/archives/129) (last known location).
-- Create your RRF subset(s) with the MySQL load option, load your database, edit conf.py and umls.py to specifications, run umsl2rdf.py
+- Install [MySQL 5.5](https://dev.mysql.com/downloads/mysql/5.5.html#downloads) to avoid the InnoDB space [disclaimer](https://www.nlm.nih.gov/research/umls/implementation_resources/scripts/README_RRF_MySQL_Output_Stream.html) by NLM. 
+- [Python 2.7.x](https://www.python.org/downloads/) should be used to avoid syntax errors on 'raise Attribute'
+- For installtion of the MySQLdb module <pre>python -m pip install MySQLdb</pre> is error prone. Install with executable [MySQL-python-1.2.3.win-amd64-py2.7](http://www.codegood.com/archives/129) (last known location).
+- Create your RRF subset(s) using mmsys with the MySQL load option, load your database, edit conf.py and umls.py to specifications, run umsl2rdf.py
