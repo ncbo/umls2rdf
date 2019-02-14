@@ -18,6 +18,8 @@ Note that 'CCS COSTAR DSM3R DSM4 DXP ICPC2ICD10ENG MCM MMSL MMX MTHCMSFRF MTHMST
 
 umls2rdf.py is designed to be an offline, run-once process. It's memory intensive and exports all of the default ontologies in umls.conf in 3h 30min. The ontologies listed in umls.conf are the UMLS ontologies accessible in [BioPortal](https://bioportal.bioontology.org/).
 
+If you get an error when installing the MySQL-python python library, https://stackoverflow.com/questions/12218229/my-config-h-file-not-found-when-intall-mysql-python-on-osx-10-8 may be of help.
+
 If running a Windows 10 OS with MySQL, the following tips may be of help.
 
 - Install [MySQL 5.5](https://dev.mysql.com/downloads/mysql/5.5.html#downloads) to avoid the InnoDB space [disclaimer](https://www.nlm.nih.gov/research/umls/implementation_resources/scripts/README_RRF_MySQL_Output_Stream.html) by NLM. 
