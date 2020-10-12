@@ -8,7 +8,7 @@ import os
 import urllib
 from string import Template
 import collections
-import MySQLdb
+import pymysql
 import pdb
 #from itertools import groupby
 
@@ -120,7 +120,7 @@ def get_code(reg,load_on_cuis):
 
 def __get_connection():
     return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
-              passwd=conf.DB_PASS,db=conf.DB_NAME,charset='utf8',use_unicode=True)
+              passwd=conf.DB_PASS,db=conf.DB_NAME_UMLS,charset='utf8',use_unicode=True)
 
 def generate_semantic_types(con,with_roots=False):
     url = get_umls_url("STY")

@@ -6,3 +6,5 @@ output/*
 sync*
 *.spf
 *.rsync
+
+.idea/
