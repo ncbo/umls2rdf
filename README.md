@@ -1,6 +1,6 @@
 This project takes a MySQL Unified Medical Language System (UMLS) database and converts the ontologies to RDF using OWL and SKOS as the main schemas.
 
-Virtual Appliance users can review the [documentation in the OntoPortal Administration Guide}(https://ontoportal.github.io/administration/ontologies/handling_umls/).
+Virtual Appliance users can review the [documentation in the OntoPortal Administration Guide}(https://ontoportal.github.io/documentation/administration/ontologies/handling_umls).
 
 To use it:
 
