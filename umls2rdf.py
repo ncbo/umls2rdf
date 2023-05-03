@@ -5,12 +5,13 @@ DEBUG = False
 import codecs
 import sys
 import os
-import urllib
+import urllib.request, urllib.parse, urllib.error
 from string import Template
 import collections
-import MySQLdb
+import mariadb
 import pdb
-#from itertools import groupby
+from functools import reduce
+from itertools import groupby
 
 try:
     import conf
@@ -23,7 +24,6 @@ PREFIXES = """
 @prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix umls: <http://bioportal.bioontology.org/ontologies/umls/> .
-
 """
 
 ONTOLOGY_HEADER = Template("""
@@ -33,7 +33,6 @@ ONTOLOGY_HEADER = Template("""
     rdfs:label "$label" ;
     owl:imports <http://www.w3.org/2004/02/skos/core> ;
     owl:versionInfo "$versioninfo" .
-
 """)
 
 STY_URL = "http://bioportal.bioontology.org/ontologies/umls/sty/"
@@ -95,9 +94,9 @@ def escape(string):
 
 def get_url_term(ns,code):
     if ns[-1] == '/':
-        ret = ns + urllib.quote(code)
+        ret = ns + urllib.parse.quote(code)
     else:
-        ret = "%s/%s"%(ns,urllib.quote(code))
+        ret = "%s/%s"%(ns,urllib.parse.quote(code))
     return ret
 
 def get_rel_fragment(rel):
@@ -116,11 +115,11 @@ def get_code(reg,load_on_cuis):
         return reg[MRCONSO_CUI]
     if reg[MRCONSO_CODE]:
         return reg[MRCONSO_CODE]
-    raise AttributeError, "No code on reg [%s]"%("|".join(reg))
+    raise AttributeError("No code on reg [%s]"%("|".join(reg)))
 
 def __get_connection():
-    return MySQLdb.connect(host=conf.DB_HOST,user=conf.DB_USER,
-              passwd=conf.DB_PASS,db=conf.DB_NAME,charset='utf8',use_unicode=True)
+    return mariadb.connect(host=conf.DB_HOST,user=conf.DB_USER,
+              passwd=conf.DB_PASS,db=conf.DB_NAME)
 
 def generate_semantic_types(con,with_roots=False):
     url = get_umls_url("STY")
@@ -253,8 +252,8 @@ class UmlsClass(object):
 
     def code(self):
         codes = set([get_code(x,self.load_on_cuis) for x in self.atoms])
-        if len(codes) <> 1:
-            raise AttributeError, "Only one code per term."
+        if len(codes) != 1:
+            raise AttributeError("Only one code per term.")
         #if DEBUG:
             #sys.stderr.write(self.atoms)
             #sys.stderr.write(codes)
@@ -262,7 +261,7 @@ class UmlsClass(object):
 
     def getAltLabels(self,prefLabel):
         #is_pref_atoms =  filter(lambda x: x[MRCONSO_ISPREF] == 'Y', self.atoms)
-        return set([atom[MRCONSO_STR] for atom in self.atoms if atom[MRCONSO_STR] <> prefLabel])
+        return set([atom[MRCONSO_STR] for atom in self.atoms if atom[MRCONSO_STR] != prefLabel])
 
     def getPrefLabel(self):
         if self.load_on_cuis:
@@ -273,19 +272,19 @@ class UmlsClass(object):
             if len(labels) == 1:
                 return labels.pop()
 
-            is_pref_atoms =  filter(lambda x: x[MRCONSO_ISPREF] == 'Y', self.atoms)
+            is_pref_atoms =  [x for x in self.atoms if x[MRCONSO_ISPREF] == 'Y']
             if len(is_pref_atoms) == 0:
                 return self.atoms[0][MRCONSO_STR]
             elif len(is_pref_atoms) == 1:
                 return is_pref_atoms[0][MRCONSO_STR]
 
-            is_pref_atoms =  filter(lambda x: x[MRCONSO_STT] == 'PF', is_pref_atoms)
+            is_pref_atoms =  [x for x in is_pref_atoms if x[MRCONSO_STT] == 'PF']
             if len(is_pref_atoms) == 0:
                 return self.atoms[0][MRCONSO_STR]
             elif len(is_pref_atoms) == 1:
                 return is_pref_atoms[0][MRCONSO_STR]
 
-            is_pref_atoms =  filter(lambda x: x[MRCONSO_TTY][0] == 'P', self.atoms)
+            is_pref_atoms =  [x for x in self.atoms if x[MRCONSO_TTY][0] == 'P']
             if len(is_pref_atoms) == 1:
                 return is_pref_atoms[0][MRCONSO_STR]
             return self.atoms[0][MRCONSO_STR]
@@ -298,10 +297,10 @@ class UmlsClass(object):
                 return mmrank_sorted_atoms[0][MRCONSO_STR]
             #there is no rank to use
             else:
-                pref_atom = filter(lambda x: 'P' in x[MRCONSO_TTY], self.atoms)
+                pref_atom = [x for x in self.atoms if 'P' in x[MRCONSO_TTY]]
                 if len(pref_atom) == 1:
                     return pref_atom[0][MRCONSO_STR]
-            raise AttributeError, "Unable to select pref label"
+            raise AttributeError("Unable to select pref label")
 
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
@@ -311,7 +310,7 @@ class UmlsClass(object):
 
     def toRDF(self,fmt="Turtle",hierarchy=True,lang="en",tree=None):
         if not fmt == "Turtle":
-            raise AttributeError, "Only fmt='Turtle' is currently supported"
+            raise AttributeError("Only fmt='Turtle' is currently supported")
         term_code = self.code()
         url_term = self.getURLTerm(term_code)
         prefLabel = self.getPrefLabel()
@@ -323,16 +322,14 @@ class UmlsClass(object):
 
         if len(altLabels) > 0:
             rdf_term += """\tskos:altLabel %s ;
-"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@%s'%(escape(x),lang),
-                                                            set(altLabels))))
+"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x),lang) for x in set(altLabels)]))
 
         if self.is_root:
             rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s ;
-"""%(" , ".join(map(lambda x: '\"\"\"%s\"\"\"@%s'%(escape(x[MRDEF_DEF]),lang),
-                                                                set(self.defs))))
+"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x[MRDEF_DEF]),lang) for x in set(self.defs)]))
 
         count_parents = 0
         if tree:
@@ -343,8 +340,8 @@ class UmlsClass(object):
         for rel in self.rels:
             source_code = get_rel_code_source(rel,self.load_on_cuis)
             target_code = get_rel_code_target(rel,self.load_on_cuis)
-            if source_code <> term_code:
-                raise AttributeError, "Inconsistent code in rel"
+            if source_code != term_code:
+                raise AttributeError("Inconsistent code in rel")
             # Map child relations to rdf:subClassOf (skip parent relations).
             if rel[MRREL_REL] == 'PAR':
                 continue
@@ -426,14 +423,14 @@ class UmlsAttribute(object):
 
     def toRDF(self,dockey,desc,fmt="Turtle"):
         if not fmt == "Turtle":
-            raise AttributeError, "Only fmt='Turtle' is currently supported"
+            raise AttributeError("Only fmt='Turtle' is currently supported")
         _type = ""
         if "REL" in dockey:
             _type = "ObjectProperty"
         elif dockey == "ATN":
             _type = "DatatypeProperty"
         else:
-            raise AttributeError, ("Unknown DOCKEY" + dockey)
+            raise AttributeError("Unknown DOCKEY" + dockey)
 
         label = self.att
         if len(desc) < 20:
@@ -572,7 +569,7 @@ class UmlsOntology(object):
         for code in self.atoms_by_code:
             code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]]
             field = MRCONSO_CUI if self.load_on_cuis else MRCONSO_AUI
-            ids = map(lambda x: x[field], code_atoms)
+            ids = [x[field] for x in code_atoms]
             rels = list()
             for _id in ids:
                 rels += [self.rels[x] for x in self.rels_by_aui_src[_id]]
@@ -601,10 +598,10 @@ class UmlsOntology(object):
                         if rel[MRREL_CUI1] == "C3264380" and rel[MRREL_REL] == "CHD":
                             is_root = True
 
-                    if len(code_source) <> 1 or len(code_target) > 1:
-                        raise AttributeError, "more than one or none codes"
+                    if len(code_source) != 1 or len(code_target) > 1:
+                        raise AttributeError("more than one or none codes")
                     if len(code_source) == 1 and len(code_target) == 1 and \
-                        code_source[0] <> code_target[0]:
+                        code_source[0] != code_target[0]:
                         code_source = code_source[0]
                         code_target = code_target[0]
                         # NOTE: the order of these append operations below is important.
@@ -652,8 +649,8 @@ class UmlsOntology(object):
             try:
                 rdf_text = term.toRDF(lang=UMLS_LANGCODE_MAP[self.lang],tree=self.tree)
                 fout.write(rdf_text)
-            except Exception, e:
-                print "ERROR dumping term ", e
+            except Exception as e:
+                print("ERROR dumping term ", e)
 
             for att in term.properties():
                 if att not in self.ont_properties:
@@ -677,7 +674,7 @@ class UmlsOntology(object):
                 continue
             doc = property_docs[prop.att]
             if "expanded_form" not in doc:
-                raise AttributeError, "expanded form not found in " + doc
+                raise AttributeError("expanded form not found in " + doc)
             _desc = doc["expanded_form"]
             if "inverse" in doc:
                 _desc = "Inverse of " + doc["inverse"]
@@ -700,7 +697,7 @@ if __name__ == "__main__":
         umls_conf = [line.split(",") \
                         for line in fconf.read().splitlines() \
                             if len(line) > 0]
-        umls_conf = filter(lambda x: not x[0].startswith("#"), umls_conf)
+        umls_conf = [x for x in umls_conf if not x[0].startswith("#")]
         fconf.close()
 
     if not os.path.isdir(conf.OUTPUT_FOLDER):
@@ -742,7 +739,7 @@ if __name__ == "__main__":
         ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
         ont.load_tables()
-        fout = ont.write_into(output_file,hierarchy=(ont.ont_code <> "MSH"))
+        fout = ont.write_into(output_file,hierarchy=(ont.ont_code != "MSH"))
         ont.write_properties(fout,property_docs)
         if conf.INCLUDE_SEMANTIC_TYPES:
           ont.write_semantic_types(sem_types,fout)
@@ -750,4 +747,3 @@ if __name__ == "__main__":
         sys.stdout.write("done!\n\n")
         sys.stdout.flush()
     sys.stdout.flush()
-

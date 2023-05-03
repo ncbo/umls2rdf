@@ -34,13 +34,13 @@ for acronym in file_map:
                     latest_subdir = sub_dir
             except ValueError:
                 continue
-        print "Latest for " + acronym + " is " + str(latest)
+        print("Latest for " + acronym + " is " + str(latest))
         if latest_subdir:
             if isfile(join(latest_subdir,ttl.split("/")[-1])):
                 shutil.copy2(ttl,latest_subdir)
-                print "ttl found"
+                print("ttl found")
             else:
-                print "ttl file not found for " + acronym
+                print("ttl file not found for " + acronym)
     else:
-        print "NOT Found " + dir_ont
+        print("NOT Found " + dir_ont)
 
