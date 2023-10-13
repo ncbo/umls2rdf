@@ -197,7 +197,7 @@ and c2.sab = 'MSH'
             cursor.close()
             return int(record[0])
 
-    def scan(self,filt=None,limit=None):
+    def scan(self,filt=None,limit=None,inner_join=None):
         #c = self.count()
         i = 0
         page = 0
@@ -207,9 +207,16 @@ and c2.sab = 'MSH'
             if self.load_select:
                 q = self.load_select
             else:
-                q = "SELECT * FROM %s WHERE %s LIMIT %s OFFSET %s"%(self.table_name,filt,self.page_size,page * self.page_size)
-                if filt == None or len(filt) == 0:
-                    q = "SELECT * FROM %s LIMIT %s OFFSET %s"%(self.table_name,self.page_size,page * self.page_size)
+                if inner_join:
+                    if filt == None or len(filt) == 0:
+                        q = "SELECT %s.* FROM %s %s LIMIT %s OFFSET %s"%(self.table_name,self.table_name,inner_join,self.page_size,page * self.page_size)
+                    else:
+                        q = "SELECT %s.* FROM %s %s WHERE %s LIMIT %s OFFSET %s" % (self.table_name, self.table_name, inner_join, filt, self.page_size, page * self.page_size)
+                else:
+                    if filt == None or len(filt) == 0:
+                        q = "SELECT * FROM %s LIMIT %s OFFSET %s" % (self.table_name, self.page_size, page * self.page_size)
+                    else:
+                        q = "SELECT * FROM %s WHERE %s LIMIT %s OFFSET %s" % (self.table_name, filt, self.page_size, page * self.page_size)
             sys.stdout.write("[UMLS-Query] %s\n" % q)
             sys.stdout.flush()
             cursor.execute(q)
@@ -250,6 +257,7 @@ class UmlsClass(object):
         self.load_on_cuis = load_on_cuis
         self.is_root = is_root
         self.class_properties = dict()
+        self.loaded_triples = dict()
 
     def code(self):
         codes = set([get_code(x,self.load_on_cuis) for x in self.atoms])
@@ -361,15 +369,28 @@ class UmlsClass(object):
                     #skip bogus HL7V3.0 root concept
                     continue
                 if not tree:
-                    rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
+                    # Use the option to remove duplications when loading by cuis
+                    if conf.LOAD_CUIS_REMOVE_DUPLICATION:
+                        triple = (url_term, "rdfs:subClassOf", o)
+                        if not self.loaded_triples.has_key(triple):
+                            rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
+                            self.loaded_triples[triple] = True
+                    else:
+                        rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
             else:
                 p = self.getURLTerm(get_rel_fragment(rel))
                 o = self.getURLTerm(target_code)
-                rdf_term += "\t<%s> <%s> ;\n" % (p,o)
+                # Use the option to remove duplications when loading by cuis
+                if conf.LOAD_CUIS_REMOVE_DUPLICATION:
+                    triple = (url_term, p, o)
+                    if not self.loaded_triples.has_key(triple):
+                        rdf_term += "\t<%s> <%s> ;\n" % (p,o)
+                        self.loaded_triples[triple] = True
+                else:
+                    rdf_term += "\t<%s> <%s> ;\n" % (p, o)
                 if p not in self.class_properties:
                     self.class_properties[p] = \
                         UmlsAttribute(p,get_rel_fragment(rel))
-
         for att in self.atts:
             atn = att[MRSAT_ATN]
             atv = att[MRSAT_ATV]
@@ -385,7 +406,7 @@ class UmlsClass(object):
                 if len(atv.split(".")) == 1:
                     rdf_term += "\trdfs:subClassOf owl:Thing;\n"
             p = self.getURLTerm(atn)
-            rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n"%(p, escape(atv))
+            rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n" % (p, escape(atv))
             if p not in self.class_properties:
                 self.class_properties[p] = UmlsAttribute(p,atn)
 
@@ -484,9 +505,17 @@ class UmlsOntology(object):
         mrsab  = UmlsTable("MRSAB", self.con)
         for sab_rec in mrsab.scan(filt="RSAB = '" + self.ont_code + "'", limit=1):
             self.lang = sab_rec[MRSAB_LAT].lower()
-        mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(
-                                                    self.ont_code,self.lang)
-        for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
+
+        # In the case of loading by cuis, we can get more triples from the concepts that have relations in MRREL table but not in the same datasource in MRCONSO table
+        if self.load_on_cuis:
+            mrconso_filt = "lat = '%s' AND SUPPRESS = 'N'" % (self.lang)
+            mrconso_join = "INNER JOIN (SELECT CUI1 AS CUI FROM MRREL WHERE SAB = '%s' UNION SELECT CUI2 AS CUI FROM MRREL WHERE SAB = '%s') V1 ON MRCONSO.CUI = V1.CUI" % (
+            self.ont_code, self.ont_code)
+        else:
+            mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(self.ont_code,self.lang)
+            mrconso_join = None
+
+        for atom in mrconso.scan(filt=mrconso_filt,limit=limit,inner_join=mrconso_join):
             index = len(self.atoms)
             self.atoms_by_code[get_code(atom,self.load_on_cuis)].append(index)
             if not self.load_on_cuis:
@@ -734,8 +763,8 @@ if __name__ == "__main__":
             umls_code,alt_uri_code = umls_code.split(";")
         if umls_code.startswith("#"):
             continue
-        load_on_cuis = load_on_field == "load_on_cuis"
-        output_file = os.path.join(conf.OUTPUT_FOLDER,file_out)
+        load_on_cuis = load_on_field.strip() == "load_on_cuis"
+        output_file = os.path.join(conf.OUTPUT_FOLDER,file_out.strip())
         sys.stdout.write("Generating %s (using '%s')\n" %
                 (umls_code,load_on_field))
         sys.stdout.flush()
