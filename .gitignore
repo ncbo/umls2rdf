@@ -6,3 +6,4 @@ output/*
 sync*
 *.spf
 *.rsync
+.vscode
