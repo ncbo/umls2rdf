@@ -14,3 +14,6 @@ UMLS_BASE_URI = "http://purl.bioontology.org/ontology/"
 
 # Include the semantic type concepts for each Ontology file generated
 INCLUDE_SEMANTIC_TYPES = True
+
+# Remove duplication of triples when loading on cuis
+LOAD_CUIS_REMOVE_DUPLICATION = True
