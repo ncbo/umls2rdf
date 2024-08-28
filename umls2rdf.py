@@ -8,7 +8,7 @@ import os
 import urllib.request, urllib.parse, urllib.error
 from string import Template
 import collections
-import mariadb
+import pymysql
 import pdb
 from functools import reduce
 from itertools import groupby
@@ -118,7 +118,7 @@ def get_code(reg,load_on_cuis):
     raise AttributeError("No code on reg [%s]"%("|".join(reg)))
 
 def __get_connection():
-    return mariadb.connect(host=conf.DB_HOST,user=conf.DB_USER,
+    return pymysql.connect(host=conf.DB_HOST,user=conf.DB_USER,
               passwd=conf.DB_PASS,db=conf.DB_NAME)
 
 def generate_semantic_types(con,with_roots=False):
