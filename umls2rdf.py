@@ -22,6 +22,7 @@ PREFIXES = """
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix umls: <http://bioportal.bioontology.org/ontologies/umls/> .
 """
@@ -29,10 +30,11 @@ PREFIXES = """
 ONTOLOGY_HEADER = Template("""
 <$uri>
     a owl:Ontology ;
-    rdfs:comment "$comment" ;
-    rdfs:label "$label" ;
+    rdfs:comment $comment ;
+    rdfs:label $label ;
     owl:imports <http://www.w3.org/2004/02/skos/core> ;
-    owl:versionInfo "$versioninfo" .
+    owl:versionInfo $versioninfo ;
+    dcterms:source $source$alt_label_line .
 """)
 
 STY_URL = "http://bioportal.bioontology.org/ontologies/umls/sty/"
@@ -80,6 +82,11 @@ MRSTY_CUI = 0
 MRSTY_TUI = 1
 
 MRSAB_LAT = 19
+MRSAB_RSAB = 3
+MRSAB_SVER = 6
+MRSAB_IMETA = 9
+MRSAB_CURVER = 21
+MRSAB_SSN = 23
 
 UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cz", "fin" : "fi", "ger" : "de", "ita" : "it", "jpn" : "jp", "pol" : "pl", "por" : "pt", "rus" : "ru", "spa" : "es", "swe" : "sw", "scr" : "hr", "dut" : "nl", "lav" : "lv", "hun" : "hu", "kor" : "kr", "dan" : "da", "nor" : "no", "heb" : "he", "baq" : "eu"}
 
@@ -91,6 +98,23 @@ def flatten(matrix):
 
 def escape(string):
     return string.replace("\\","\\\\").replace('"','\\"')
+
+def turtle_string(value, lang=None, datatype=None):
+    value = escape(str(value))
+    if lang:
+        return '"""%s"""@%s' % (value, lang)
+    if datatype:
+        return '"""%s"""^^%s' % (value, datatype)
+    return '"""%s"""' % value
+
+def get_mrsab_record(mrsab, ont_code):
+    records = list(mrsab.scan(filt="RSAB = '" + ont_code + "'"))
+    if not records:
+        return None
+    current_records = [record for record in records if record[MRSAB_CURVER] == 'Y']
+    if current_records:
+        return current_records[0]
+    return records[0]
 
 def get_url_term(ns,code):
     if ns[-1] == '/':
@@ -471,6 +495,29 @@ class UmlsOntology(object):
         self.cui_roots = set()
         self.lang = None
         self.ont_properties = dict()
+        self.mrsab_record = None
+
+    def ontology_version(self):
+        if self.mrsab_record and self.mrsab_record[MRSAB_SVER]:
+            return self.mrsab_record[MRSAB_SVER]
+        return conf.UMLS_VERSION
+
+    def ontology_label(self):
+        if self.mrsab_record and self.mrsab_record[MRSAB_SSN]:
+            return self.mrsab_record[MRSAB_SSN]
+        return self.ont_code
+
+    def ontology_source(self):
+        if not self.mrsab_record:
+            return "UMLS %s" % conf.UMLS_VERSION
+        if self.mrsab_record[MRSAB_IMETA]:
+            return "UMLS %s" % self.mrsab_record[MRSAB_IMETA]
+        return "UMLS %s" % conf.UMLS_VERSION
+
+    def ontology_alt_label(self):
+        if self.mrsab_record[MRSAB_RSAB]:
+            return self.mrsab_record[MRSAB_RSAB]
+        return None
 
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
@@ -479,6 +526,7 @@ class UmlsOntology(object):
         else:
             self.tree = None
         mrsab  = UmlsTable("MRSAB", self.con)
+        self.mrsab_record = get_mrsab_record(mrsab, self.ont_code)
         for sab_rec in mrsab.scan(filt="RSAB = '" + self.ont_code + "'", limit=1):
             self.lang = sab_rec[MRSAB_LAT].lower()
         mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(
@@ -638,13 +686,14 @@ class UmlsOntology(object):
                   "converted with the UMLS2RDF tool " +\
                   "(https://github.com/ncbo/umls2rdf), "+\
                   "developed by the NCBO project."
-        header_values = dict(
-           label = self.ont_code,
-           comment = comment % self.ont_code,
-           versioninfo = conf.UMLS_VERSION,
-           uri = self.ns
-        )
-        fout.write(ONTOLOGY_HEADER.substitute(header_values))
+        fout.write(ONTOLOGY_HEADER.substitute(dict(
+            uri=self.ns,
+            comment=turtle_string(comment % self.ont_code),
+            label=turtle_string(self.ontology_label()),
+            versioninfo=turtle_string(self.ontology_version()),
+            source=turtle_string(self.ontology_source()),
+            alt_label_line=(' ;\n    skos:altLabel %s' % turtle_string(self.ontology_alt_label())) if self.ontology_alt_label() else ""
+        )))
         for term in self.terms():
             try:
                 rdf_text = term.toRDF(lang=UMLS_LANGCODE_MAP[self.lang],tree=self.tree)
