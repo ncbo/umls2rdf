@@ -35,6 +35,7 @@ ONTOLOGY_HEADER = Template("""
     owl:imports <http://www.w3.org/2004/02/skos/core> ;
     owl:versionInfo $versioninfo ;
     dcterms:source $source$alt_label_line .
+
 """)
 
 STY_URL = "http://bioportal.bioontology.org/ontologies/umls/sty/"
@@ -101,11 +102,12 @@ def escape(string):
 
 def turtle_string(value, lang=None, datatype=None):
     value = escape(str(value))
+    literal = '"""%s"""' % value if "\n" in value else '"%s"' % value
     if lang:
-        return '"""%s"""@%s' % (value, lang)
+        return '%s@%s' % (literal, lang)
     if datatype:
-        return '"""%s"""^^%s' % (value, datatype)
-    return '"""%s"""' % value
+        return '%s^^%s' % (literal, datatype)
+    return literal
 
 def get_mrsab_record(mrsab, ont_code):
     records = list(mrsab.scan(filt="RSAB = '" + ont_code + "'"))
