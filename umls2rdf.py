@@ -497,27 +497,25 @@ class UmlsOntology(object):
         self.ont_properties = dict()
         self.mrsab_record = None
 
+    def mrsab_value(self, idx, default=None):
+        if self.mrsab_record and self.mrsab_record[idx]:
+            return self.mrsab_record[idx]
+        return default
+
     def ontology_version(self):
-        if self.mrsab_record and self.mrsab_record[MRSAB_SVER]:
-            return self.mrsab_record[MRSAB_SVER]
-        return conf.UMLS_VERSION
+        return self.mrsab_value(MRSAB_SVER, conf.UMLS_VERSION)
 
     def ontology_label(self):
-        if self.mrsab_record and self.mrsab_record[MRSAB_SSN]:
-            return self.mrsab_record[MRSAB_SSN]
-        return self.ont_code
+        return self.mrsab_value(MRSAB_SSN, self.ont_code)
 
     def ontology_source(self):
-        if not self.mrsab_record:
-            return "UMLS %s" % conf.UMLS_VERSION
-        if self.mrsab_record[MRSAB_IMETA]:
-            return "UMLS %s" % self.mrsab_record[MRSAB_IMETA]
+        imeta = self.mrsab_value(MRSAB_IMETA)
+        if imeta:
+            return "UMLS %s" % imeta
         return "UMLS %s" % conf.UMLS_VERSION
 
     def ontology_alt_label(self):
-        if self.mrsab_record[MRSAB_RSAB]:
-            return self.mrsab_record[MRSAB_RSAB]
-        return None
+        return self.mrsab_value(MRSAB_RSAB)
 
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
