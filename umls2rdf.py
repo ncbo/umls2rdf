@@ -525,8 +525,8 @@ class UmlsOntology(object):
             self.tree = None
         mrsab  = UmlsTable("MRSAB", self.con)
         self.mrsab_record = get_mrsab_record(mrsab, self.ont_code)
-        for sab_rec in mrsab.scan(filt="RSAB = '" + self.ont_code + "'", limit=1):
-            self.lang = sab_rec[MRSAB_LAT].lower()
+        if self.mrsab_record and self.mrsab_record[MRSAB_LAT]:
+            self.lang = self.mrsab_record[MRSAB_LAT].lower()
         mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(
                                                     self.ont_code,self.lang)
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
