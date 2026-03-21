@@ -94,6 +94,9 @@ UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cz", "fin" : "fi", "ge
 def get_umls_url(code):
     return "%s%s/"%(conf.UMLS_BASE_URI,code)
 
+def get_output_dir():
+    return os.path.join(conf.OUTPUT_FOLDER, conf.UMLS_VERSION)
+
 def flatten(matrix):
     return reduce(lambda x,y: x+y,matrix)
 
@@ -519,6 +522,9 @@ class UmlsOntology(object):
     def ontology_alt_label(self):
         return self.mrsab_value(MRSAB_RSAB)
 
+    def should_process_current_version(self):
+        return self.mrsab_value(MRSAB_IMETA) == conf.UMLS_VERSION
+
     def load_tables(self,limit=None):
         mrconso = UmlsTable("MRCONSO",self.con)
         if self.ont_code == 'MSH':
@@ -751,11 +757,12 @@ if __name__ == "__main__":
         umls_conf = [x for x in umls_conf if not x[0].startswith("#")]
         fconf.close()
 
-    if not os.path.isdir(conf.OUTPUT_FOLDER):
-        raise Exception("Output folder '%s' not found."%conf.OUTPUT_FOLDER)
+    output_dir = get_output_dir()
+    if not os.path.isdir(output_dir):
+        os.makedirs(output_dir)
 
     sem_types = generate_semantic_types(con,with_roots=True)
-    output_file = os.path.join(conf.OUTPUT_FOLDER,"umls_semantictypes.ttl")
+    output_file = os.path.join(output_dir,"umls_semantictypes.ttl")
     with codecs.open(output_file,"w","utf-8") as semfile:
         semfile.write(PREFIXES)
         semfile.write(sem_types)
@@ -783,12 +790,21 @@ if __name__ == "__main__":
         if umls_code.startswith("#"):
             continue
         load_on_cuis = load_on_field == "load_on_cuis"
-        output_file = os.path.join(conf.OUTPUT_FOLDER,file_out)
+        output_file = os.path.join(output_dir,file_out)
         sys.stdout.write("Generating %s (using '%s')\n" %
                 (umls_code,load_on_field))
         sys.stdout.flush()
         ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
+        mrsab = UmlsTable("MRSAB", con)
+        ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
+        if getattr(conf, "PROCESS_ONLY_CURRENT_UMLS_VERSION", False) and not ont.should_process_current_version():
+            sys.stdout.write("Skipping %s: IMETA=%s, expected %s\n\n" % (
+                umls_code,
+                ont.mrsab_value(MRSAB_IMETA, "None"),
+                conf.UMLS_VERSION))
+            sys.stdout.flush()
+            continue
         ont.load_tables()
         fout = ont.write_into(output_file,hierarchy=(ont.ont_code != "MSH"))
         ont.write_properties(fout,property_docs)
