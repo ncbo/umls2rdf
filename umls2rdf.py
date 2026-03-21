@@ -527,8 +527,10 @@ class UmlsOntology(object):
             self.tree = None
         mrsab  = UmlsTable("MRSAB", self.con)
         self.mrsab_record = get_mrsab_record(mrsab, self.ont_code)
-        if self.mrsab_record and self.mrsab_record[MRSAB_LAT]:
-            self.lang = self.mrsab_record[MRSAB_LAT].lower()
+        self.lang = self.mrsab_value(MRSAB_LAT)
+        if not self.lang:
+            raise ValueError("No LAT found in MRSAB for ontology %s" % self.ont_code)
+        self.lang = self.lang.lower()
         mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(
                                                     self.ont_code,self.lang)
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
