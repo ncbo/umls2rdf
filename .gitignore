@@ -1,6 +1,7 @@
 conf.py
 *.pyc
 output/*
+data/*
 
 *.swp
 sync*
