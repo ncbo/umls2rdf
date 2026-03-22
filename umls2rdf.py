@@ -95,7 +95,7 @@ def get_umls_url(code):
     return "%s%s/"%(conf.UMLS_BASE_URI,code)
 
 def get_output_dir():
-    return os.path.join(conf.OUTPUT_FOLDER, conf.UMLS_VERSION)
+    return conf.OUTPUT_FOLDER
 
 def flatten(matrix):
     return reduce(lambda x,y: x+y,matrix)
