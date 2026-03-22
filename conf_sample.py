@@ -16,6 +16,9 @@ INCLUDE_SEMANTIC_TYPES = True
 # Define the base URI used to generate the concepts URI
 UMLS_BASE_URI = "http://purl.bioontology.org/ontology/"
 
+# Only process ontologies updated in this UMLS release (MRSAB.IMETA == UMLS_VERSION)
+PROCESS_ONLY_CURRENT_UMLS_VERSION = False
+
 # Pipeline config
 UMLS_API_KEY = "your umls api key"
 
