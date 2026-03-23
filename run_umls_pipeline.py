@@ -183,6 +183,13 @@ def shell_assignment(name, value):
     return "%s=%s" % (name, shlex.quote(str(value)))
 
 
+def get_mysql_client_flags():
+    extra_flags = getattr(conf, "MYSQL_CLIENT_FLAGS", ())
+    if isinstance(extra_flags, str):
+        extra_flags = shlex.split(extra_flags)
+    return " ".join(shlex.quote(flag) for flag in extra_flags)
+
+
 def patch_sql_template_in_place(meta_dir):
     sql_path = meta_dir / "mysql_tables.sql"
     content = sql_path.read_text()
@@ -201,6 +208,7 @@ def render_loader_script(source_path):
     }
     lines = source_path.read_text().splitlines()
     output_lines = []
+    mysql_client_flags = get_mysql_client_flags()
     for line in lines:
         stripped = line.strip()
         replaced = False
@@ -209,15 +217,11 @@ def render_loader_script(source_path):
                 output_lines.append(shell_assignment(key, value))
                 replaced = True
                 break
-        if (
-            not replaced
-            and "$MYSQL_HOME/bin/mysql" in line
-            and "--local-infile=1" not in line
-        ):
+        if not replaced and "$MYSQL_HOME/bin/mysql -vvv" in line and mysql_client_flags:
             output_lines.append(
                 line.replace(
                     "$MYSQL_HOME/bin/mysql -vvv",
-                    "$MYSQL_HOME/bin/mysql -vvv --local-infile=1",
+                    "$MYSQL_HOME/bin/mysql -vvv %s" % mysql_client_flags,
                 )
             )
             replaced = True
@@ -231,20 +235,20 @@ def render_loader_script(source_path):
     return "\n".join(output_lines) + "\n"
 
 
+def patch_loader_script_in_place(script_path):
+    script_path.write_text(render_loader_script(script_path))
+    script_path.chmod(0o755)
+
+
 def run_loader(meta_dir):
     ensure_database(conf.DB_NAME, recreate=True)
     patch_sql_template_in_place(meta_dir)
-
-    work_dir = get_pipeline_work_dir()
-    work_dir.mkdir(parents=True, exist_ok=True)
-    source_script = meta_dir / "populate_mysql_db.sh"
-    patched_script = work_dir / "populate_mysql_db.sh"
-    patched_script.write_text(render_loader_script(source_script))
-    patched_script.chmod(0o755)
+    loader_script = meta_dir / "populate_mysql_db.sh"
+    patch_loader_script_in_place(loader_script)
 
     log("Loading UMLS tables into MySQL database %s" % conf.DB_NAME)
     run_command(
-        [patched_script.as_posix()],
+        [loader_script.as_posix()],
         cwd=meta_dir,
     )
 

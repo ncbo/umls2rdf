@@ -10,6 +10,9 @@ DB_USER = "umls"
 DB_PASS = "umls"
 MYSQL_HOME = "/usr"
 
+# Optional mysql client flags appended to populate_mysql_db.sh invocations.
+# MYSQL_CLIENT_FLAGS = ["--local-infile=1", "--hostname=my_db_server"]
+
 # Include the semantic type concepts for each Ontology file generated
 INCLUDE_SEMANTIC_TYPES = True
 
