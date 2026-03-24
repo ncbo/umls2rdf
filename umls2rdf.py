@@ -334,6 +334,42 @@ class UmlsClass(object):
     def getURLTerm(self,code):
         return get_url_term(self.ns,code)
 
+    def _append_object_triple(self, rdf_term, seen_triples, subject, predicate, obj):
+        triple = (subject, predicate, obj)
+        if seen_triples is not None:
+            if triple in seen_triples:
+                return rdf_term
+            seen_triples.add(triple)
+        return rdf_term + "\t<%s> <%s> ;\n" % (predicate, obj)
+
+    def _append_subclass_triple(self, rdf_term, seen_triples, subject, obj):
+        triple = (subject, "rdfs:subClassOf", obj)
+        if seen_triples is not None:
+            if triple in seen_triples:
+                return rdf_term
+            seen_triples.add(triple)
+        return rdf_term + "\trdfs:subClassOf <%s> ;\n" % (obj,)
+
+    def _sorted_rels(self):
+        return sorted(
+            self.rels,
+            key=lambda rel: (
+                rel[MRREL_REL] != 'CHD',
+                get_rel_fragment(rel),
+                get_rel_code_target(rel, self.load_on_cuis),
+                get_rel_code_source(rel, self.load_on_cuis),
+            ),
+        )
+
+    def _sorted_atts(self):
+        return sorted(
+            self.atts,
+            key=lambda att: (
+                att[MRSAT_ATN],
+                att[MRSAT_ATV],
+            ),
+        )
+
     def properties(self):
         return self.class_properties
 
@@ -349,24 +385,28 @@ class UmlsClass(object):
 \tskos:notation \"\"\"%s\"\"\"^^xsd:string ;
 """%(url_term,escape(prefLabel),lang,escape(term_code))
 
+        seen_triples = None
+        if self.load_on_cuis and conf.DEDUPE_RELATION_TRIPLES_IN_LOAD_ON_CUIS:
+            seen_triples = set()
+
         if len(altLabels) > 0:
             rdf_term += """\tskos:altLabel %s ;
-"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x),lang) for x in set(altLabels)]))
+"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x),lang) for x in sorted(set(altLabels))]))
 
         if self.is_root:
             rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
 
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s ;
-"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x[MRDEF_DEF]),lang) for x in set(self.defs)]))
+"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x[MRDEF_DEF]),lang) for x in sorted(set(self.defs), key=lambda x: x[MRDEF_DEF])]))
 
         count_parents = 0
         if tree:
             if term_code in tree:
-                for parent in tree[term_code]:
+                for parent in sorted(tree[term_code]):
                     o = self.getURLTerm(parent)
-                    rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
-        for rel in self.rels:
+                    rdf_term = self._append_subclass_triple(rdf_term, seen_triples, url_term, o)
+        for rel in self._sorted_rels():
             source_code = get_rel_code_source(rel,self.load_on_cuis)
             target_code = get_rel_code_target(rel,self.load_on_cuis)
             if source_code != term_code:
@@ -387,16 +427,16 @@ class UmlsClass(object):
                     #skip bogus HL7V3.0 root concept
                     continue
                 if not tree:
-                    rdf_term += "\trdfs:subClassOf <%s> ;\n" % (o,)
+                    rdf_term = self._append_subclass_triple(rdf_term, seen_triples, url_term, o)
             else:
                 p = self.getURLTerm(get_rel_fragment(rel))
                 o = self.getURLTerm(target_code)
-                rdf_term += "\t<%s> <%s> ;\n" % (p,o)
+                rdf_term = self._append_object_triple(rdf_term, seen_triples, url_term, p, o)
                 if p not in self.class_properties:
                     self.class_properties[p] = \
                         UmlsAttribute(p,get_rel_fragment(rel))
 
-        for att in self.atts:
+        for att in self._sorted_atts():
             atn = att[MRSAT_ATN]
             atv = att[MRSAT_ATV]
             if atn == 'AQ':
@@ -416,17 +456,17 @@ class UmlsClass(object):
                 self.class_properties[p] = UmlsAttribute(p,atn)
 
         #auis = set([x[MRCONSO_AUI] for x in self.atoms])
-        cuis = set([x[MRCONSO_CUI] for x in self.atoms])
+        cuis = sorted(set([x[MRCONSO_CUI] for x in self.atoms]))
         sty_recs = flatten([indexes for indexes in [self.sty_by_cui[cui] for cui in cuis]])
-        types = [self.sty[index][MRSTY_TUI] for index in sty_recs]
+        types = sorted(set([self.sty[index][MRSTY_TUI] for index in sty_recs]))
 
         #for t in auis:
         #    rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_AUI,t)
         for t in cuis:
             rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_CUI,t)
-        for t in set(types):
+        for t in types:
             rdf_term += """\t%s \"\"\"%s\"\"\"^^xsd:string ;\n"""%(HAS_TUI,t)
-        for t in set(types):
+        for t in types:
             rdf_term += """\t%s <%s> ;\n"""%(HAS_STY,get_umls_url("STY")+t)
 
         return rdf_term + " .\n\n"
