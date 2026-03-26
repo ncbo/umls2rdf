@@ -13,9 +13,10 @@ MYSQL_HOME = "/usr"
 # Optional mysql client flags appended to populate_mysql_db.sh invocations.
 # MYSQL_CLIENT_FLAGS = ["--local-infile=1", "--hostname=my_db_server"]
 
-# When loading on CUIs, suppress duplicate object-property and rdfs:subClassOf
-# triples within a single exported class.
-DEDUPE_RELATION_TRIPLES_IN_LOAD_ON_CUIS = True
+# Suppress duplicate triples within a single exported class. This covers
+# repeated literal attributes as well as object-property and rdfs:subClassOf
+# triples in both load modes.
+DEDUPE_CLASS_TRIPLES = True
 
 # Include the semantic type concepts for each Ontology file generated
 INCLUDE_SEMANTIC_TYPES = True

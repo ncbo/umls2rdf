@@ -338,17 +338,29 @@ class UmlsClass(object):
         triple = (subject, predicate, obj)
         if seen_triples is not None:
             if triple in seen_triples:
+                self.duplicate_triples_skipped["object"] += 1
                 return rdf_term
             seen_triples.add(triple)
         return rdf_term + "\t<%s> <%s> ;\n" % (predicate, obj)
+
+    def _append_literal_triple(self, rdf_term, seen_triples, subject, predicate, value):
+        triple = (subject, predicate, value)
+        if seen_triples is not None:
+            if triple in seen_triples:
+                self.duplicate_triples_skipped["literal"] += 1
+                return rdf_term
+            seen_triples.add(triple)
+        return rdf_term + "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n" % (predicate, escape(value))
 
     def _append_subclass_triple(self, rdf_term, seen_triples, subject, obj):
         triple = (subject, "rdfs:subClassOf", obj)
         if seen_triples is not None:
             if triple in seen_triples:
+                self.duplicate_triples_skipped["subclass"] += 1
                 return rdf_term
             seen_triples.add(triple)
-        return rdf_term + "\trdfs:subClassOf <%s> ;\n" % (obj,)
+        rendered_obj = "<%s>" % (obj,) if "://" in obj else obj
+        return rdf_term + "\trdfs:subClassOf %s ;\n" % (rendered_obj,)
 
     def _sorted_rels(self):
         return sorted(
@@ -373,9 +385,17 @@ class UmlsClass(object):
     def properties(self):
         return self.class_properties
 
+    def _dedupe_repeated_triples(self):
+        return conf.DEDUPE_CLASS_TRIPLES
+
     def toRDF(self,fmt="Turtle",hierarchy=True,lang="en",tree=None):
         if not fmt == "Turtle":
             raise AttributeError("Only fmt='Turtle' is currently supported")
+        self.duplicate_triples_skipped = {
+            "literal": 0,
+            "object": 0,
+            "subclass": 0,
+        }
         term_code = self.code()
         url_term = self.getURLTerm(term_code)
         prefLabel = self.getPrefLabel()
@@ -385,20 +405,18 @@ class UmlsClass(object):
 \tskos:notation \"\"\"%s\"\"\"^^xsd:string ;
 """%(url_term,escape(prefLabel),lang,escape(term_code))
 
-        seen_triples = None
-        if self.load_on_cuis and conf.DEDUPE_RELATION_TRIPLES_IN_LOAD_ON_CUIS:
-            seen_triples = set()
+        seen_triples = set() if self._dedupe_repeated_triples() else None
 
         if len(altLabels) > 0:
             rdf_term += """\tskos:altLabel %s ;
 """%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x),lang) for x in sorted(set(altLabels))]))
 
         if self.is_root:
-            rdf_term += '\trdfs:subClassOf owl:Thing ;\n'
+            rdf_term = self._append_subclass_triple(rdf_term, seen_triples, url_term, "owl:Thing")
 
         if len(self.defs) > 0:
             rdf_term += """\tskos:definition %s ;
-"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x[MRDEF_DEF]),lang) for x in sorted(set(self.defs), key=lambda x: x[MRDEF_DEF])]))
+"""%(" , ".join(['\"\"\"%s\"\"\"@%s'%(escape(x),lang) for x in sorted(set([d[MRDEF_DEF] for d in self.defs]))]))
 
         count_parents = 0
         if tree:
@@ -449,9 +467,9 @@ class UmlsClass(object):
             #MESH ROOTS ONLY DESCRIPTORS
             if tree and atn == "MN" and term_code.startswith("D"):
                 if len(atv.split(".")) == 1:
-                    rdf_term += "\trdfs:subClassOf owl:Thing;\n"
+                    rdf_term = self._append_subclass_triple(rdf_term, seen_triples, url_term, "owl:Thing")
             p = self.getURLTerm(atn)
-            rdf_term += "\t<%s> \"\"\"%s\"\"\"^^xsd:string ;\n"%(p, escape(atv))
+            rdf_term = self._append_literal_triple(rdf_term, seen_triples, url_term, p, atv)
             if p not in self.class_properties:
                 self.class_properties[p] = UmlsAttribute(p,atn)
 
@@ -742,10 +760,13 @@ class UmlsOntology(object):
             source=turtle_string(self.ontology_source()),
             alt_label_line=(' ;\n    skos:altLabel %s' % turtle_string(self.ontology_alt_label())) if self.ontology_alt_label() else ""
         )))
+        duplicate_counts = self._empty_duplicate_counts()
         for term in self.terms():
             try:
                 rdf_text = term.toRDF(lang=UMLS_LANGCODE_MAP[self.lang],tree=self.tree)
                 fout.write(rdf_text)
+                for kind, count in term.duplicate_triples_skipped.items():
+                    duplicate_counts[kind] += count
             except Exception as e:
                 print("ERROR dumping term ", e)
 
@@ -753,10 +774,29 @@ class UmlsOntology(object):
                 if att not in self.ont_properties:
                     self.ont_properties[att] = term.properties()[att]
 
+        if conf.DEDUPE_CLASS_TRIPLES:
+            sys.stdout.write(
+                "%s duplicate triples skipped: literal=%d object=%d subclass=%d\n"
+                % (
+                    self.ont_code,
+                    duplicate_counts["literal"],
+                    duplicate_counts["object"],
+                    duplicate_counts["subclass"],
+                )
+            )
+            sys.stdout.flush()
+
         return fout
 
     def properties(self):
         return self.ont_properties
+
+    def _empty_duplicate_counts(self):
+        return {
+            "literal": 0,
+            "object": 0,
+            "subclass": 0,
+        }
 
     def write_properties(self,fout,property_docs):
         self.ont_properties["hasSTY"] =\

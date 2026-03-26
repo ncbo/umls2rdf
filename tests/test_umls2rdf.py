@@ -60,6 +60,12 @@ def make_att(cui, atn, atv):
     return row
 
 
+def make_code_att(code, atn, atv):
+    row = make_att("", atn, atv)
+    row[5] = code
+    return row
+
+
 class UmlsClassDedupeRegressionTest(unittest.TestCase):
     def make_term(self, rels):
         cui = "C0001"
@@ -80,10 +86,36 @@ class UmlsClassDedupeRegressionTest(unittest.TestCase):
     def render_term(self, term, dedupe_enabled, tree=None):
         with mock.patch.object(
             conf,
-            "DEDUPE_RELATION_TRIPLES_IN_LOAD_ON_CUIS",
+            "DEDUPE_CLASS_TRIPLES",
             dedupe_enabled,
+            create=True,
         ):
             return term.toRDF(tree=tree)
+
+    def test_dedupes_duplicate_literal_triples_in_load_on_codes_mode(self):
+        term = UmlsClass(
+            "http://example.org/test",
+            atoms=[make_code_atom("C0001", "A001", "CODE1", "Preferred label", tty="PT")],
+            rels=[],
+            defs=[],
+            atts=[
+                make_code_att("CODE1", "TH", "NLM (1994)"),
+                make_code_att("CODE1", "TH", "NLM (1994)"),
+            ],
+            rank=[],
+            rank_by_tty={},
+            sty=[make_sty("C0001", "T001")],
+            sty_by_cui={"C0001": [0]},
+            load_on_cuis=False,
+            is_root=False,
+        )
+
+        rdf_without_dedupe = self.render_term(term, dedupe_enabled=False)
+        rdf_with_dedupe = self.render_term(term, dedupe_enabled=True)
+
+        expected = '<http://example.org/test/TH> """NLM (1994)"""^^xsd:string ;'
+        self.assertEqual(rdf_without_dedupe.count(expected), 2)
+        self.assertEqual(rdf_with_dedupe.count(expected), 1)
 
     def test_dedupes_duplicate_subclass_triples_in_load_on_cuis_mode(self):
         rel = make_rel("C0001", "CParent", "CHD")
@@ -278,7 +310,7 @@ class UmlsClassBehaviorTest(unittest.TestCase):
             is_root=False,
         )
 
-        with mock.patch.object(conf, "DEDUPE_RELATION_TRIPLES_IN_LOAD_ON_CUIS", True):
+        with mock.patch.object(conf, "DEDUPE_CLASS_TRIPLES", True, create=True):
             rdf = term.toRDF(tree=None)
 
         self.assertIn("rdfs:subClassOf <http://example.org/test/VALID_PARENT> ;", rdf)
