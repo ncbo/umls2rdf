@@ -16,6 +16,7 @@ import pymysql
 import conf
 from create_mysql_db import ensure_database
 from download_umls import get_extract_dir
+from umls2rdf import MANIFEST_FILENAME
 
 
 STEP_DOWNLOAD = "downloaded"
@@ -28,7 +29,12 @@ REQUIRED_META_FILES = (
     "mysql_tables.sql",
     "mysql_indexes.sql",
 )
-REQUIRED_DB_TABLES = ("MRCONSO", "MRREL", "MRSAB", "MRSTY")
+# Every table umls2rdf.py reads.
+REQUIRED_DB_TABLES = (
+    "MRCONSO", "MRDEF", "MRDOC", "MRRANK", "MRREL", "MRSAB", "MRSAT", "MRSTY",
+)
+MRFILES_FIL = 0
+MRFILES_RWS = 4
 LOG_STREAM = None
 
 
@@ -253,7 +259,29 @@ def run_loader(meta_dir):
     )
 
 
-def validate_loaded_database():
+def expected_row_counts(meta_dir):
+    """Row counts for REQUIRED_DB_TABLES from the release's META/MRFILES.RRF."""
+    mrfiles = Path(meta_dir) / "MRFILES.RRF"
+    if not mrfiles.exists():
+        return {}
+    counts = {}
+    for line in mrfiles.read_text(encoding="utf-8").splitlines():
+        fields = line.split("|")
+        if len(fields) <= MRFILES_RWS:
+            continue
+        file_name = fields[MRFILES_FIL]
+        if "/" in file_name or not file_name.endswith(".RRF"):
+            continue
+        table_name = file_name[: -len(".RRF")]
+        if table_name in REQUIRED_DB_TABLES and fields[MRFILES_RWS].isdigit():
+            counts[table_name] = int(fields[MRFILES_RWS])
+    return counts
+
+
+def validate_loaded_database(meta_dir):
+    expected = expected_row_counts(meta_dir)
+    if not expected:
+        log("No row counts found in %s/MRFILES.RRF; only checking tables are non-empty." % meta_dir)
     try:
         connection = pymysql.connect(
             host=conf.DB_HOST,
@@ -262,18 +290,28 @@ def validate_loaded_database():
             db=conf.DB_NAME,
             charset="utf8mb4",
         )
-    except pymysql.MySQLError:
+    except pymysql.MySQLError as error:
+        log("Database check failed: cannot connect to %s: %s" % (conf.DB_NAME, error))
         return False
     try:
         with connection.cursor() as cursor:
             for table_name in REQUIRED_DB_TABLES:
                 cursor.execute("SHOW TABLES LIKE %s", (table_name,))
                 if cursor.fetchone() is None:
+                    log("Database check failed: table %s is missing." % table_name)
                     return False
-            cursor.execute("SELECT COUNT(*) FROM MRCONSO")
-            row = cursor.fetchone()
-            return bool(row and row[0] > 0)
-    except pymysql.MySQLError:
+                cursor.execute("SELECT COUNT(*) FROM `%s`" % table_name)
+                row_count = cursor.fetchone()[0]
+                if row_count == 0:
+                    log("Database check failed: table %s is empty." % table_name)
+                    return False
+                if table_name in expected and row_count != expected[table_name]:
+                    log("Database check failed: table %s has %d rows, MRFILES.RRF lists %d."
+                        % (table_name, row_count, expected[table_name]))
+                    return False
+            return True
+    except pymysql.MySQLError as error:
+        log("Database check failed: %s" % error)
         return False
     finally:
         connection.close()
@@ -284,10 +322,26 @@ def get_rdf_output_dir():
 
 
 def rdf_output_is_ready():
+    """True when umls2rdf.py finished and every file it reported is present."""
     output_dir = get_rdf_output_dir()
-    if not output_dir.exists():
+    manifest_path = output_dir / MANIFEST_FILENAME
+    if not manifest_path.exists():
         return False
-    return any(output_dir.glob("*.ttl"))
+    try:
+        manifest = json.loads(manifest_path.read_text())
+    except ValueError:
+        return False
+    if manifest.get("umls_version") != conf.UMLS_VERSION:
+        return False
+    file_names = [manifest.get("semantic_types_file")]
+    file_names += [entry.get("file") for entry in manifest.get("ontologies", [])]
+    for file_name in file_names:
+        if not file_name:
+            return False
+        path = output_dir / file_name
+        if not path.is_file() or path.stat().st_size == 0:
+            return False
+    return True
 
 
 def run_umls2rdf():
@@ -331,11 +385,11 @@ def main():
         },
     )
 
-    if state["steps"].get(STEP_DB_LOAD) and validate_loaded_database():
+    if state["steps"].get(STEP_DB_LOAD) and validate_loaded_database(meta_dir):
         log("Skipping MySQL load; database %s is already populated." % conf.DB_NAME)
     else:
         run_loader(meta_dir)
-        if not validate_loaded_database():
+        if not validate_loaded_database(meta_dir):
             raise RuntimeError("MySQL load completed but validation failed.")
         mark_step_complete(
             state,
@@ -348,7 +402,10 @@ def main():
     else:
         run_umls2rdf()
         if not rdf_output_is_ready():
-            raise RuntimeError("umls2rdf.py finished but no TTL output was found.")
+            raise RuntimeError(
+                "umls2rdf.py finished but %s is missing or lists missing files."
+                % (get_rdf_output_dir() / MANIFEST_FILENAME)
+            )
         mark_step_complete(
             state,
             STEP_RDF,

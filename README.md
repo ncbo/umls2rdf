@@ -82,6 +82,20 @@ after validating the extracted files, MySQL tables, and RDF output. Add
 stdout and stderr are appended to <code>PIPELINE_LOG_FILE</code> when set, or
 to <code>data/pipeline/&lt;UMLS_VERSION&gt;/pipeline.log</code> by default.
 
+The database load counts as complete only when every table that
+<code>umls2rdf.py</code> reads exists and its row count matches
+<code>META/MRFILES.RRF</code>. The RDF export counts as complete only when
+<code>umls2rdf_manifest.json</code> exists in the output directory for the
+configured <code>UMLS_VERSION</code> and every file it lists is present and
+non-empty.
+
+<code>umls2rdf.py</code> logs each term it cannot convert as
+<code>ERROR &lt;SAB&gt;: term &lt;code&gt; not written: ...</code> and prints
+a written/failed count per ontology. If any ontology has more failed terms than
+<code>MAX_TERM_ERRORS</code> (default <code>0</code>), it still writes all
+output files but exits with status 1 and does not write
+<code>umls2rdf_manifest.json</code>.
+
 If <code>PROCESS_ONLY_CURRENT_UMLS_VERSION</code> is set to <code>True</code>,
 the exporter only processes ontologies whose <code>MRSAB.IMETA</code> exactly
 matches <code>UMLS_VERSION</code>. Ontologies with a different value are skipped

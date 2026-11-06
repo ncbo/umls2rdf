@@ -3,12 +3,14 @@
 DEBUG = False
 
 import codecs
+import json
 import sys
 import os
 import urllib.request, urllib.parse, urllib.error
 from string import Template
 import collections
 import pymysql
+import pymysql.cursors
 import pdb
 from functools import reduce
 from itertools import groupby
@@ -91,6 +93,37 @@ MRSAB_SSN = 23
 
 UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cz", "fin" : "fi", "ger" : "de", "ita" : "it", "jpn" : "jp", "pol" : "pl", "por" : "pt", "rus" : "ru", "spa" : "es", "swe" : "sw", "scr" : "hr", "dut" : "nl", "lav" : "lv", "hun" : "hu", "kor" : "kr", "dan" : "da", "nor" : "no", "heb" : "he", "baq" : "eu"}
 
+# Written to OUTPUT_FOLDER only after a run finishes within the allowed number
+# of term errors; run_umls_pipeline.py uses it to decide whether the export
+# step is complete.
+MANIFEST_FILENAME = "umls2rdf_manifest.json"
+
+# Settings added after conf.py files were already deployed. conf.py is not
+# tracked, so read these with defaults that keep the old behavior.
+CONF_DEFAULTS = {
+    "DEDUPE_CLASS_TRIPLES": False,
+    "INCLUDE_SEMANTIC_TYPES": True,
+    "PROCESS_ONLY_CURRENT_UMLS_VERSION": False,
+    "MAX_TERM_ERRORS": 0,
+}
+
+def conf_setting(name):
+    return getattr(conf, name, CONF_DEFAULTS[name])
+
+def get_language_tag(lat, ont_code):
+    if lat not in UMLS_LANGCODE_MAP:
+        raise ValueError(
+            "No language tag mapping for MRSAB LAT '%s' (ontology %s); "
+            "add it to UMLS_LANGCODE_MAP" % (lat, ont_code))
+    return UMLS_LANGCODE_MAP[lat]
+
+def describe_term(term):
+    try:
+        return term.code()
+    except Exception:
+        ids = sorted(set(str(atom[MRCONSO_CUI]) for atom in (term.atoms or [])))
+        return "CUI " + ",".join(ids) if ids else "<unknown>"
+
 def get_umls_url(code):
     return "%s%s/"%(conf.UMLS_BASE_URI,code)
 
@@ -147,8 +180,13 @@ def get_code(reg,load_on_cuis):
     raise AttributeError("No code on reg [%s]"%("|".join(reg)))
 
 def __get_connection():
-    return pymysql.connect(host=conf.DB_HOST,user=conf.DB_USER,
+    con = pymysql.connect(host=conf.DB_HOST,user=conf.DB_USER,
               passwd=conf.DB_PASS,db=conf.DB_NAME)
+    # UmlsTable.scan streams rows; give the server more than the default 60s
+    # to wait on the client between network writes.
+    with con.cursor() as cursor:
+        cursor.execute("SET SESSION net_write_timeout = 3600")
+    return con
 
 def generate_semantic_types(con,with_roots=False):
     url = get_umls_url("STY")
@@ -195,7 +233,6 @@ class UmlsTable(object):
     def __init__(self,table_name,conn,load_select=None):
         self.table_name = table_name
         self.conn = conn
-        self.page_size = 500000
         self.load_select = load_select
 
     def mesh_tree(self):
@@ -226,37 +263,31 @@ and c2.sab = 'MSH'
             return int(record[0])
 
     def scan(self,filt=None,limit=None):
-        #c = self.count()
-        i = 0
-        page = 0
-        cont = True
-        cursor = self.conn.cursor()
-        while cont:
-            if self.load_select:
-                q = self.load_select
-            else:
-                q = "SELECT * FROM %s WHERE %s LIMIT %s OFFSET %s"%(self.table_name,filt,self.page_size,page * self.page_size)
-                if filt == None or len(filt) == 0:
-                    q = "SELECT * FROM %s LIMIT %s OFFSET %s"%(self.table_name,self.page_size,page * self.page_size)
-            sys.stdout.write("[UMLS-Query] %s\n" % q)
-            sys.stdout.flush()
+        # One query, streamed with an unbuffered cursor. The previous
+        # LIMIT/OFFSET paging had no ORDER BY, so MySQL was free to return
+        # rows in a different order per page (skipping or repeating rows),
+        # and every page rescanned all the rows before its offset.
+        # The connection cannot run another query until the cursor is closed,
+        # so callers must consume (or close) the generator before the next scan.
+        if self.load_select:
+            q = self.load_select
+        elif filt:
+            q = "SELECT * FROM %s WHERE %s" % (self.table_name, filt)
+        else:
+            q = "SELECT * FROM %s" % self.table_name
+        if limit and not self.load_select:
+            q += " LIMIT %d" % int(limit)
+        sys.stdout.write("[UMLS-Query] %s\n" % q)
+        sys.stdout.flush()
+        cursor = self.conn.cursor(pymysql.cursors.SSCursor)
+        try:
             cursor.execute(q)
-            result = cursor.fetchall()
-            cont = False
-            for record in result:
-                cont = True
-                i += 1
+            for i, record in enumerate(cursor, 1):
                 yield record
                 if limit and i >= limit:
-                    cont = False
                     break
-            # Do we already have all the rows available for the query?
-            if self.load_select:
-                cont = False
-            elif not limit and i < self.page_size:
-                cont = False
-            page += 1
-        cursor.close()
+        finally:
+            cursor.close()
 
 
 
@@ -386,7 +417,7 @@ class UmlsClass(object):
         return self.class_properties
 
     def _dedupe_repeated_triples(self):
-        return conf.DEDUPE_CLASS_TRIPLES
+        return conf_setting("DEDUPE_CLASS_TRIPLES")
 
     def toRDF(self,fmt="Turtle",hierarchy=True,lang="en",tree=None):
         if not fmt == "Turtle":
@@ -595,6 +626,8 @@ class UmlsOntology(object):
         if not self.lang:
             raise ValueError("No LAT found in MRSAB for ontology %s" % self.ont_code)
         self.lang = self.lang.lower()
+        # Fail before loading anything rather than failing on every term.
+        get_language_tag(self.lang, self.ont_code)
         mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(
                                                     self.ont_code,self.lang)
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
@@ -761,20 +794,32 @@ class UmlsOntology(object):
             alt_label_line=(' ;\n    skos:altLabel %s' % turtle_string(self.ontology_alt_label())) if self.ontology_alt_label() else ""
         )))
         duplicate_counts = self._empty_duplicate_counts()
+        lang_tag = get_language_tag(self.lang, self.ont_code)
+        self.terms_written = 0
+        self.term_errors = []
         for term in self.terms():
             try:
-                rdf_text = term.toRDF(lang=UMLS_LANGCODE_MAP[self.lang],tree=self.tree)
+                rdf_text = term.toRDF(lang=lang_tag,tree=self.tree)
                 fout.write(rdf_text)
+                self.terms_written += 1
                 for kind, count in term.duplicate_triples_skipped.items():
                     duplicate_counts[kind] += count
             except Exception as e:
-                print("ERROR dumping term ", e)
+                term_id = describe_term(term)
+                self.term_errors.append(term_id)
+                sys.stderr.write("ERROR %s: term %s not written: %s: %s\n" % (
+                    self.ont_code, term_id, type(e).__name__, e))
+                sys.stderr.flush()
 
             for att in term.properties():
                 if att not in self.ont_properties:
                     self.ont_properties[att] = term.properties()[att]
 
-        if conf.DEDUPE_CLASS_TRIPLES:
+        sys.stdout.write("%s terms written: %d, failed: %d\n" % (
+            self.ont_code, self.terms_written, len(self.term_errors)))
+        sys.stdout.flush()
+
+        if conf_setting("DEDUPE_CLASS_TRIPLES"):
             sys.stdout.write(
                 "%s duplicate triples skipped: literal=%d object=%d subclass=%d\n"
                 % (
@@ -824,6 +869,31 @@ class UmlsOntology(object):
         fout.write("\n")
 
 
+def get_manifest_path(output_dir):
+    return os.path.join(output_dir, MANIFEST_FILENAME)
+
+def remove_manifest(output_dir):
+    path = get_manifest_path(output_dir)
+    if os.path.exists(path):
+        os.remove(path)
+
+def write_manifest(output_dir, ontologies, skipped):
+    manifest = {
+        "umls_version": conf.UMLS_VERSION,
+        "semantic_types_file": "umls_semantictypes.ttl",
+        "ontologies": ontologies,
+        "skipped": skipped,
+    }
+    path = get_manifest_path(output_dir)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as fmanifest:
+        json.dump(manifest, fmanifest, indent=2, sort_keys=True)
+        fmanifest.write("\n")
+    os.replace(tmp_path, path)
+
+def ontologies_over_error_limit(results, max_errors):
+    return [r for r in results if r["term_errors"] > max_errors]
+
 
 if __name__ == "__main__":
 
@@ -840,6 +910,9 @@ if __name__ == "__main__":
     output_dir = get_output_dir()
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
+    remove_manifest(output_dir)
+    results = []
+    skipped = []
 
     sem_types = generate_semantic_types(con,with_roots=True)
     output_file = os.path.join(output_dir,"umls_semantictypes.ttl")
@@ -878,19 +951,39 @@ if __name__ == "__main__":
         ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
         mrsab = UmlsTable("MRSAB", con)
         ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
-        if getattr(conf, "PROCESS_ONLY_CURRENT_UMLS_VERSION", False) and not ont.should_process_current_version():
+        if conf_setting("PROCESS_ONLY_CURRENT_UMLS_VERSION") and not ont.should_process_current_version():
             sys.stdout.write("Skipping %s: IMETA=%s, expected %s\n\n" % (
                 umls_code,
                 ont.mrsab_value(MRSAB_IMETA, "None"),
                 conf.UMLS_VERSION))
             sys.stdout.flush()
+            skipped.append(umls_code)
             continue
         ont.load_tables()
         fout = ont.write_into(output_file,hierarchy=(ont.ont_code != "MSH"))
         ont.write_properties(fout,property_docs)
-        if conf.INCLUDE_SEMANTIC_TYPES:
+        if conf_setting("INCLUDE_SEMANTIC_TYPES"):
           ont.write_semantic_types(sem_types,fout)
         fout.close()
+        results.append({
+            "sab": umls_code,
+            "file": file_out,
+            "terms_written": ont.terms_written,
+            "term_errors": len(ont.term_errors),
+        })
         sys.stdout.write("done!\n\n")
         sys.stdout.flush()
+    sys.stdout.flush()
+
+    max_errors = conf_setting("MAX_TERM_ERRORS")
+    failed = ontologies_over_error_limit(results, max_errors)
+    if failed:
+        for r in failed:
+            sys.stderr.write("FAILED %s: %d terms not written (MAX_TERM_ERRORS=%d)\n" % (
+                r["sab"], r["term_errors"], max_errors))
+        sys.stderr.write("No manifest written; see ERROR lines above.\n")
+        sys.stderr.flush()
+        sys.exit(1)
+    write_manifest(output_dir, results, skipped)
+    sys.stdout.write("Wrote %s\n" % get_manifest_path(output_dir))
     sys.stdout.flush()
