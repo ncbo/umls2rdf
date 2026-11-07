@@ -1,9 +1,28 @@
 import collections
+import io
+import json
+import os
+import tempfile
+import types
 import unittest
 from unittest import mock
 
+import pymysql.cursors
+
 import conf
-from umls2rdf import UmlsClass, UmlsOntology, get_rel_code_source, get_rel_code_target
+from umls2rdf import (
+    MANIFEST_FILENAME,
+    UmlsClass,
+    UmlsOntology,
+    UmlsTable,
+    export_ontologies,
+    get_language_tag,
+    get_rel_code_source,
+    get_rel_code_target,
+    ontologies_over_error_limit,
+    remove_manifest,
+    write_manifest,
+)
 
 
 def make_atom(cui, label, ispref="", stt="", tty=""):
@@ -374,6 +393,200 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         self.assertIn('owl:versionInfo "2025-test-version" ;', written)
         self.assertIn('dcterms:source "UMLS 2025AB"', written)
         self.assertIn('skos:altLabel "TEST-RSAB" .', written)
+
+    def make_code_ontology(self, atoms_by_code):
+        ont = UmlsOntology("TEST", "http://example.org/test", con=None, load_on_cuis=False)
+        ont.loaded = True
+        ont.lang = "eng"
+        ont.tree = None
+        ont.mrsab_record = [""] * 24
+        for code, atom in atoms_by_code.items():
+            ont.atoms_by_code[code].append(len(ont.atoms))
+            ont.atoms_by_aui[atom[7]].append(len(ont.atoms))
+            ont.atoms.append(atom)
+        ont.sty_by_cui = collections.defaultdict(list)
+        return ont
+
+    def test_write_into_reports_failed_terms_and_keeps_writing(self):
+        good = make_code_atom("C0001", "A001", "GOOD", "Good label", tty="PT")
+        # TTY "XX" has no MRRANK row, so the preferred label lookup fails.
+        bad = make_code_atom("C0002", "A002", "BAD", "Bad label", tty="XX")
+        ont = self.make_code_ontology({"GOOD": good, "BAD": bad})
+        ont.rank = [["1", "TEST", "PT", "N"]]
+        ont.rank_by_tty = collections.defaultdict(list, {"PT": [0]})
+
+        writes = []
+        fout = mock.Mock()
+        fout.write.side_effect = writes.append
+        with mock.patch("umls2rdf.codecs.open", return_value=fout), \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
+            ont.write_into("ignored.ttl")
+
+        self.assertEqual(ont.terms_written, 1)
+        self.assertEqual(ont.term_errors, ["BAD"])
+        self.assertIn("ERROR TEST: term BAD not written: IndexError", stderr.getvalue())
+        self.assertIn("<http://example.org/test/GOOD>", "".join(writes))
+
+    def test_write_into_reports_terms_that_fail_to_build(self):
+        good = make_code_atom("C0001", "A001", "GOOD", "Good label", tty="PT")
+        bad = make_code_atom("C0002", "A002", "BAD", "Bad label", tty="PT")
+        ont = self.make_code_ontology({"BAD": bad, "GOOD": good})
+        ont.rank = [["1", "TEST", "PT", "N"]]
+        ont.rank_by_tty = collections.defaultdict(list, {"PT": [0]})
+        # The relation's source AUI matches no atom, so building BAD raises
+        # "more than one or none codes" before toRDF is reached.
+        ont.rels = [make_code_rel("C0002", "A_GHOST", "C0001", "A001", "CHD")]
+        ont.rels_by_aui_src = collections.defaultdict(list, {"A002": [0]})
+
+        writes = []
+        fout = mock.Mock()
+        fout.write.side_effect = writes.append
+        with mock.patch("umls2rdf.codecs.open", return_value=fout), \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
+            ont.write_into("ignored.ttl")
+
+        self.assertEqual(ont.terms_written, 1)
+        self.assertEqual(ont.term_errors, ["BAD"])
+        self.assertIn("ERROR TEST: term BAD not written: AttributeError", stderr.getvalue())
+        self.assertIn("<http://example.org/test/GOOD>", "".join(writes))
+
+    def test_write_into_loads_tables_before_opening_output(self):
+        atom = make_code_atom("C0001", "A001", "CODE1", "Label", tty="PT")
+        ont = self.make_code_ontology({"CODE1": atom})
+        ont.loaded = False
+        ont.lang = None
+
+        def load_tables():
+            ont.loaded = True
+            ont.lang = "eng"
+
+        with mock.patch.object(ont, "load_tables", side_effect=load_tables) as load, \
+                mock.patch("umls2rdf.codecs.open", return_value=mock.Mock()):
+            ont.write_into("ignored.ttl")
+
+        load.assert_called_once_with()
+        self.assertEqual(ont.terms_written, 1)
+
+    def test_write_into_unmapped_language_does_not_open_output(self):
+        ont = self.make_code_ontology({})
+        ont.lang = "xyz"
+
+        with mock.patch("umls2rdf.codecs.open") as open_file:
+            with self.assertRaisesRegex(ValueError, "LAT 'xyz'"):
+                ont.write_into("ignored.ttl")
+
+        open_file.assert_not_called()
+
+    def test_write_into_works_with_conf_missing_newer_settings(self):
+        atom = make_code_atom("C0001", "A001", "CODE1", "Label", tty="PT")
+        ont = self.make_code_ontology({"CODE1": atom})
+        old_conf = types.SimpleNamespace(
+            UMLS_BASE_URI="http://example.org/", UMLS_VERSION="2025AB")
+
+        with mock.patch("umls2rdf.conf", old_conf), \
+                mock.patch("umls2rdf.codecs.open", return_value=mock.Mock()):
+            ont.write_into("ignored.ttl")
+
+        self.assertEqual(ont.terms_written, 1)
+        self.assertEqual(ont.term_errors, [])
+
+
+class LanguageTagTest(unittest.TestCase):
+    def test_unmapped_language_fails_with_clear_error(self):
+        with self.assertRaisesRegex(ValueError, "LAT 'xyz' \\(ontology TEST\\)"):
+            get_language_tag("xyz", "TEST")
+
+    def test_mapped_language(self):
+        self.assertEqual(get_language_tag("eng", "TEST"), "en")
+
+
+class UmlsTableScanTest(unittest.TestCase):
+    def scan(self, rows, **kwargs):
+        cursor = mock.MagicMock()
+        cursor.__iter__.return_value = iter(rows)
+        conn = mock.Mock()
+        conn.cursor.return_value = cursor
+        table = UmlsTable("MRCONSO", conn, load_select=kwargs.pop("load_select", None))
+        with mock.patch("umls2rdf.sys.stdout", new_callable=io.StringIO):
+            result = list(table.scan(**kwargs))
+        return result, conn, cursor
+
+    def test_streams_one_query_without_paging(self):
+        rows = [("r%d" % i,) for i in range(5)]
+        result, conn, cursor = self.scan(rows, filt="SAB = 'TEST'")
+
+        self.assertEqual(result, rows)
+        conn.cursor.assert_called_once_with(pymysql.cursors.SSCursor)
+        cursor.execute.assert_called_once_with("SELECT * FROM MRCONSO WHERE SAB = 'TEST'")
+        cursor.close.assert_called_once()
+
+    def test_limit_is_pushed_into_query(self):
+        rows = [("r%d" % i,) for i in range(5)]
+        result, _, cursor = self.scan(rows, limit=2)
+
+        self.assertEqual(result, rows[:2])
+        cursor.execute.assert_called_once_with("SELECT * FROM MRCONSO LIMIT 2")
+        cursor.close.assert_called_once()
+
+    def test_load_select_is_used_verbatim(self):
+        result, _, cursor = self.scan([("a",)], load_select="SELECT 1")
+
+        self.assertEqual(result, [("a",)])
+        cursor.execute.assert_called_once_with("SELECT 1")
+
+
+class ExportOntologiesTest(unittest.TestCase):
+    UMLS_CONF = [
+        ["MDRISL", "MDRISL.ttl", "load_on_codes"],
+        ["#OLD", "OLD.ttl", "load_on_codes"],
+        ["ICD10;ICD10ALT", "ICD10.ttl", "load_on_codes"],
+        ["AIR", "AIR.ttl", "load_on_codes"],
+    ]
+
+    def export(self, side_effect):
+        with mock.patch("umls2rdf.export_ontology", side_effect=side_effect) as export_one, \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
+            outcome = export_ontologies(None, self.UMLS_CONF, "out", {}, "")
+        return outcome, export_one, stderr.getvalue()
+
+    def test_failed_ontology_is_reported_and_the_rest_still_export(self):
+        icd10 = {"sab": "ICD10", "file": "ICD10.ttl", "terms_written": 5, "term_errors": 0}
+        (results, skipped, failures), export_one, stderr = self.export(
+            [ValueError("No language tag mapping for MRSAB LAT 'isl'"), icd10, None])
+
+        self.assertEqual(export_one.call_count, 3)
+        self.assertEqual(results, [icd10])
+        self.assertEqual(skipped, ["AIR"])
+        self.assertEqual(failures, ["MDRISL"])
+        self.assertIn("ERROR MDRISL: ontology not exported: ValueError", stderr)
+
+    def test_lost_connection_stops_the_run(self):
+        error = pymysql.err.OperationalError(2013, "Lost connection")
+        with self.assertRaises(pymysql.err.OperationalError):
+            self.export([error])
+
+
+class ManifestTest(unittest.TestCase):
+    def test_error_limit(self):
+        results = [
+            {"sab": "A", "term_errors": 0},
+            {"sab": "B", "term_errors": 3},
+        ]
+        self.assertEqual([r["sab"] for r in ontologies_over_error_limit(results, 0)], ["B"])
+        self.assertEqual(ontologies_over_error_limit(results, 3), [])
+
+    def test_write_and_remove_manifest(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            with mock.patch.object(conf, "UMLS_VERSION", "2025AB"):
+                write_manifest(output_dir, [{"sab": "A", "file": "A.ttl"}], ["B"])
+            with open(os.path.join(output_dir, MANIFEST_FILENAME)) as fmanifest:
+                manifest = json.load(fmanifest)
+            self.assertEqual(manifest["umls_version"], "2025AB")
+            self.assertEqual(manifest["skipped"], ["B"])
+            self.assertEqual(os.listdir(output_dir), [MANIFEST_FILENAME])
+
+            remove_manifest(output_dir)
+            self.assertEqual(os.listdir(output_dir), [])
 
 
 if __name__ == "__main__":

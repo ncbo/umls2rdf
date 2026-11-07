@@ -27,6 +27,11 @@ UMLS_BASE_URI = "http://purl.bioontology.org/ontology/"
 # Only process ontologies updated in this UMLS release (MRSAB.IMETA == UMLS_VERSION)
 PROCESS_ONLY_CURRENT_UMLS_VERSION = False
 
+# Terms that fail to convert are logged with their code and left out of the
+# output. If any ontology has more failed terms than this, umls2rdf.py exits
+# non-zero and does not write umls2rdf_manifest.json.
+MAX_TERM_ERRORS = 0
+
 # Pipeline config
 UMLS_API_KEY = "your umls api key"
 

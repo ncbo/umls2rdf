@@ -3,12 +3,15 @@
 DEBUG = False
 
 import codecs
+import json
 import sys
 import os
+import traceback
 import urllib.request, urllib.parse, urllib.error
 from string import Template
 import collections
 import pymysql
+import pymysql.cursors
 import pdb
 from functools import reduce
 from itertools import groupby
@@ -91,6 +94,30 @@ MRSAB_SSN = 23
 
 UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cz", "fin" : "fi", "ger" : "de", "ita" : "it", "jpn" : "jp", "pol" : "pl", "por" : "pt", "rus" : "ru", "spa" : "es", "swe" : "sw", "scr" : "hr", "dut" : "nl", "lav" : "lv", "hun" : "hu", "kor" : "kr", "dan" : "da", "nor" : "no", "heb" : "he", "baq" : "eu"}
 
+# Written to OUTPUT_FOLDER only after a run finishes within the allowed number
+# of term errors; run_umls_pipeline.py uses it to decide whether the export
+# step is complete.
+MANIFEST_FILENAME = "umls2rdf_manifest.json"
+
+# Settings added after conf.py files were already deployed. conf.py is not
+# tracked, so read these with defaults that keep the old behavior.
+CONF_DEFAULTS = {
+    "DEDUPE_CLASS_TRIPLES": False,
+    "INCLUDE_SEMANTIC_TYPES": True,
+    "PROCESS_ONLY_CURRENT_UMLS_VERSION": False,
+    "MAX_TERM_ERRORS": 0,
+}
+
+def conf_setting(name):
+    return getattr(conf, name, CONF_DEFAULTS[name])
+
+def get_language_tag(lat, ont_code):
+    if lat not in UMLS_LANGCODE_MAP:
+        raise ValueError(
+            "No language tag mapping for MRSAB LAT '%s' (ontology %s); "
+            "add it to UMLS_LANGCODE_MAP" % (lat, ont_code))
+    return UMLS_LANGCODE_MAP[lat]
+
 def get_umls_url(code):
     return "%s%s/"%(conf.UMLS_BASE_URI,code)
 
@@ -147,8 +174,13 @@ def get_code(reg,load_on_cuis):
     raise AttributeError("No code on reg [%s]"%("|".join(reg)))
 
 def __get_connection():
-    return pymysql.connect(host=conf.DB_HOST,user=conf.DB_USER,
+    con = pymysql.connect(host=conf.DB_HOST,user=conf.DB_USER,
               passwd=conf.DB_PASS,db=conf.DB_NAME)
+    # UmlsTable.scan streams rows; give the server more than the default 60s
+    # to wait on the client between network writes.
+    with con.cursor() as cursor:
+        cursor.execute("SET SESSION net_write_timeout = 3600")
+    return con
 
 def generate_semantic_types(con,with_roots=False):
     url = get_umls_url("STY")
@@ -195,7 +227,6 @@ class UmlsTable(object):
     def __init__(self,table_name,conn,load_select=None):
         self.table_name = table_name
         self.conn = conn
-        self.page_size = 500000
         self.load_select = load_select
 
     def mesh_tree(self):
@@ -226,37 +257,31 @@ and c2.sab = 'MSH'
             return int(record[0])
 
     def scan(self,filt=None,limit=None):
-        #c = self.count()
-        i = 0
-        page = 0
-        cont = True
-        cursor = self.conn.cursor()
-        while cont:
-            if self.load_select:
-                q = self.load_select
-            else:
-                q = "SELECT * FROM %s WHERE %s LIMIT %s OFFSET %s"%(self.table_name,filt,self.page_size,page * self.page_size)
-                if filt == None or len(filt) == 0:
-                    q = "SELECT * FROM %s LIMIT %s OFFSET %s"%(self.table_name,self.page_size,page * self.page_size)
-            sys.stdout.write("[UMLS-Query] %s\n" % q)
-            sys.stdout.flush()
+        # One query, streamed with an unbuffered cursor. The previous
+        # LIMIT/OFFSET paging had no ORDER BY, so MySQL was free to return
+        # rows in a different order per page (skipping or repeating rows),
+        # and every page rescanned all the rows before its offset.
+        # The connection cannot run another query until the cursor is closed,
+        # so callers must consume (or close) the generator before the next scan.
+        if self.load_select:
+            q = self.load_select
+        elif filt:
+            q = "SELECT * FROM %s WHERE %s" % (self.table_name, filt)
+        else:
+            q = "SELECT * FROM %s" % self.table_name
+        if limit and not self.load_select:
+            q += " LIMIT %d" % int(limit)
+        sys.stdout.write("[UMLS-Query] %s\n" % q)
+        sys.stdout.flush()
+        cursor = self.conn.cursor(pymysql.cursors.SSCursor)
+        try:
             cursor.execute(q)
-            result = cursor.fetchall()
-            cont = False
-            for record in result:
-                cont = True
-                i += 1
+            for i, record in enumerate(cursor, 1):
                 yield record
                 if limit and i >= limit:
-                    cont = False
                     break
-            # Do we already have all the rows available for the query?
-            if self.load_select:
-                cont = False
-            elif not limit and i < self.page_size:
-                cont = False
-            page += 1
-        cursor.close()
+        finally:
+            cursor.close()
 
 
 
@@ -386,7 +411,7 @@ class UmlsClass(object):
         return self.class_properties
 
     def _dedupe_repeated_triples(self):
-        return conf.DEDUPE_CLASS_TRIPLES
+        return conf_setting("DEDUPE_CLASS_TRIPLES")
 
     def toRDF(self,fmt="Turtle",hierarchy=True,lang="en",tree=None):
         if not fmt == "Turtle":
@@ -595,6 +620,8 @@ class UmlsOntology(object):
         if not self.lang:
             raise ValueError("No LAT found in MRSAB for ontology %s" % self.ont_code)
         self.lang = self.lang.lower()
+        # Fail before loading anything rather than failing on every term.
+        get_language_tag(self.lang, self.ont_code)
         mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'N'"%(
                                                     self.ont_code,self.lang)
         for atom in mrconso.scan(filt=mrconso_filt,limit=limit):
@@ -679,70 +706,78 @@ class UmlsOntology(object):
     def terms(self):
         if not self.loaded:
             self.load_tables()
-        # Note: most UMLS ontologies are 'load_on_codes' (only HL7 is load_on_cuis)
         for code in self.atoms_by_code:
-            code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]]
-            field = MRCONSO_CUI if self.load_on_cuis else MRCONSO_AUI
-            ids = [x[field] for x in code_atoms]
-            rels = list()
-            for _id in ids:
-                rels += [self.rels[x] for x in self.rels_by_aui_src[_id]]
-            rels_to_class = list()
-            is_root = False
-            if self.load_on_cuis:
-                rels_to_class = rels
-                for rel in rels_to_class:
-                    if rel[MRREL_CUI1] in self.cui_roots:
+            yield self.build_term(code)
+
+    def build_term(self, code):
+        # Note: most UMLS ontologies are 'load_on_codes' (only HL7 is load_on_cuis)
+        code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]]
+        field = MRCONSO_CUI if self.load_on_cuis else MRCONSO_AUI
+        ids = [x[field] for x in code_atoms]
+        rels = list()
+        for _id in ids:
+            rels += [self.rels[x] for x in self.rels_by_aui_src[_id]]
+        rels_to_class = list()
+        is_root = False
+        if self.load_on_cuis:
+            rels_to_class = rels
+            for rel in rels_to_class:
+                if rel[MRREL_CUI1] in self.cui_roots:
+                    is_root = True
+                    break
+        else:
+            for rel in rels:
+                rel_with_codes = list(rel)
+                aui_source = rel[MRREL_AUI2]
+                aui_target = rel[MRREL_AUI1]
+                code_source = [ get_code(self.atoms[x],self.load_on_cuis) \
+                                    for x in self.atoms_by_aui[aui_source] ]
+                code_target = [ get_code(self.atoms[x],self.load_on_cuis) \
+                                    for x in self.atoms_by_aui[aui_target] ]
+                # TODO: Check use of CUI1 (target) or CUI2 (source) here:
+                if (rel[MRREL_CUI1] in self.cui_roots) and rel[MRREL_REL] == "CHD":
+                    is_root = True
+                elif self.ont_code == "ICD10CM":
+                    # TODO: patch to fix ICD10-CM hierachy.
+                    if rel[MRREL_CUI1] == "C3264380" and rel[MRREL_REL] == "CHD":
                         is_root = True
-                        break
-            else:
-                for rel in rels:
-                    rel_with_codes = list(rel)
-                    aui_source = rel[MRREL_AUI2]
-                    aui_target = rel[MRREL_AUI1]
-                    code_source = [ get_code(self.atoms[x],self.load_on_cuis) \
-                                        for x in self.atoms_by_aui[aui_source] ]
-                    code_target = [ get_code(self.atoms[x],self.load_on_cuis) \
-                                        for x in self.atoms_by_aui[aui_target] ]
-                    # TODO: Check use of CUI1 (target) or CUI2 (source) here:
-                    if (rel[MRREL_CUI1] in self.cui_roots) and rel[MRREL_REL] == "CHD":
-                        is_root = True
-                    elif self.ont_code == "ICD10CM":
-                        # TODO: patch to fix ICD10-CM hierachy.
-                        if rel[MRREL_CUI1] == "C3264380" and rel[MRREL_REL] == "CHD":
-                            is_root = True
 
-                    if len(code_source) != 1 or len(code_target) > 1:
-                        raise AttributeError("more than one or none codes")
-                    if len(code_source) == 1 and len(code_target) == 1 and \
-                        code_source[0] != code_target[0]:
-                        code_source = code_source[0]
-                        code_target = code_target[0]
-                        # NOTE: the order of these append operations below is important.
-                        # get_rel_code_source() - it uses [-1]
-                        # get_rel_code_target() - it uses [-2]
-                        # which are called from UmlsClass.toRDF().
-                        rel_with_codes.append(code_target)
-                        rel_with_codes.append(code_source)
-                        rels_to_class.append(rel_with_codes)
-            aui_codes_def = [self.defs_by_aui[_id] for _id in ids]
-            aui_codes_def = [item for sublist in aui_codes_def for item in sublist]
-            defs = [self.defs[index] for index in aui_codes_def]
-            atts = [self.atts[x] for x in self.atts_by_code[code]]
+                if len(code_source) != 1 or len(code_target) > 1:
+                    raise AttributeError("more than one or none codes")
+                if len(code_source) == 1 and len(code_target) == 1 and \
+                    code_source[0] != code_target[0]:
+                    code_source = code_source[0]
+                    code_target = code_target[0]
+                    # NOTE: the order of these append operations below is important.
+                    # get_rel_code_source() - it uses [-1]
+                    # get_rel_code_target() - it uses [-2]
+                    # which are called from UmlsClass.toRDF().
+                    rel_with_codes.append(code_target)
+                    rel_with_codes.append(code_source)
+                    rels_to_class.append(rel_with_codes)
+        aui_codes_def = [self.defs_by_aui[_id] for _id in ids]
+        aui_codes_def = [item for sublist in aui_codes_def for item in sublist]
+        defs = [self.defs[index] for index in aui_codes_def]
+        atts = [self.atts[x] for x in self.atts_by_code[code]]
 
-            umls_class = UmlsClass(self.ns,atoms=code_atoms,rels=rels_to_class,
-                defs=defs,atts=atts,rank=self.rank,rank_by_tty=self.rank_by_tty,
-                sty=self.sty, sty_by_cui=self.sty_by_cui,
-                load_on_cuis=self.load_on_cuis,is_root=is_root)
+        umls_class = UmlsClass(self.ns,atoms=code_atoms,rels=rels_to_class,
+            defs=defs,atts=atts,rank=self.rank,rank_by_tty=self.rank_by_tty,
+            sty=self.sty, sty_by_cui=self.sty_by_cui,
+            load_on_cuis=self.load_on_cuis,is_root=is_root)
 
-            # TODO: patch to fix roots in SNOMED-CT
-            # suppress should fix this one
-            #if self.ont_code == "SNOMEDCT_US":
-            #    umls_class.is_root = (umls_class.code() == "138875005")
+        # TODO: patch to fix roots in SNOMED-CT
+        # suppress should fix this one
+        #if self.ont_code == "SNOMEDCT_US":
+        #    umls_class.is_root = (umls_class.code() == "138875005")
 
-            yield umls_class
+        return umls_class
 
     def write_into(self,file_path,hierarchy=True):
+        # Load (and validate the language) before opening the output file, so a
+        # failure here does not leave a header-only file behind.
+        if not self.loaded:
+            self.load_tables()
+        lang_tag = get_language_tag(self.lang, self.ont_code)
         sys.stdout.write("%s writing terms ... %s\n" % (self.ont_code, file_path))
         sys.stdout.flush()
         fout = codecs.open(file_path,"w","utf-8")
@@ -761,20 +796,37 @@ class UmlsOntology(object):
             alt_label_line=(' ;\n    skos:altLabel %s' % turtle_string(self.ontology_alt_label())) if self.ontology_alt_label() else ""
         )))
         duplicate_counts = self._empty_duplicate_counts()
-        for term in self.terms():
+        self.terms_written = 0
+        self.term_errors = []
+        # Build each term inside the try: an exception raised while building
+        # a term from inside the terms() generator would end the generator
+        # and abort the whole ontology.
+        for code in self.atoms_by_code:
+            term = None
             try:
-                rdf_text = term.toRDF(lang=UMLS_LANGCODE_MAP[self.lang],tree=self.tree)
+                term = self.build_term(code)
+                rdf_text = term.toRDF(lang=lang_tag,tree=self.tree)
                 fout.write(rdf_text)
+                self.terms_written += 1
                 for kind, count in term.duplicate_triples_skipped.items():
                     duplicate_counts[kind] += count
             except Exception as e:
-                print("ERROR dumping term ", e)
+                self.term_errors.append(code)
+                sys.stderr.write("ERROR %s: term %s not written: %s: %s\n" % (
+                    self.ont_code, code, type(e).__name__, e))
+                sys.stderr.flush()
 
+            if term is None:
+                continue
             for att in term.properties():
                 if att not in self.ont_properties:
                     self.ont_properties[att] = term.properties()[att]
 
-        if conf.DEDUPE_CLASS_TRIPLES:
+        sys.stdout.write("%s terms written: %d, failed: %d\n" % (
+            self.ont_code, self.terms_written, len(self.term_errors)))
+        sys.stdout.flush()
+
+        if conf_setting("DEDUPE_CLASS_TRIPLES"):
             sys.stdout.write(
                 "%s duplicate triples skipped: literal=%d object=%d subclass=%d\n"
                 % (
@@ -824,6 +876,101 @@ class UmlsOntology(object):
         fout.write("\n")
 
 
+def get_manifest_path(output_dir):
+    return os.path.join(output_dir, MANIFEST_FILENAME)
+
+def remove_manifest(output_dir):
+    path = get_manifest_path(output_dir)
+    if os.path.exists(path):
+        os.remove(path)
+
+def write_manifest(output_dir, ontologies, skipped):
+    manifest = {
+        "umls_version": conf.UMLS_VERSION,
+        "semantic_types_file": "umls_semantictypes.ttl",
+        "ontologies": ontologies,
+        "skipped": skipped,
+    }
+    path = get_manifest_path(output_dir)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w") as fmanifest:
+        json.dump(manifest, fmanifest, indent=2, sort_keys=True)
+        fmanifest.write("\n")
+    os.replace(tmp_path, path)
+
+def ontologies_over_error_limit(results, max_errors):
+    return [r for r in results if r["term_errors"] > max_errors]
+
+def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
+                    property_docs, sem_types):
+    """Write one umls.conf entry. Returns its manifest entry, or None if skipped."""
+    alt_uri_code = None
+    if ";" in umls_code:
+        umls_code,alt_uri_code = umls_code.split(";")
+    load_on_cuis = load_on_field == "load_on_cuis"
+    output_file = os.path.join(output_dir,file_out)
+    sys.stdout.write("Generating %s (using '%s')\n" %
+            (umls_code,load_on_field))
+    sys.stdout.flush()
+    ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
+    ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
+    mrsab = UmlsTable("MRSAB", con)
+    ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
+    if conf_setting("PROCESS_ONLY_CURRENT_UMLS_VERSION") and not ont.should_process_current_version():
+        sys.stdout.write("Skipping %s: IMETA=%s, expected %s\n\n" % (
+            umls_code,
+            ont.mrsab_value(MRSAB_IMETA, "None"),
+            conf.UMLS_VERSION))
+        sys.stdout.flush()
+        return None
+    ont.load_tables()
+    fout = ont.write_into(output_file,hierarchy=(ont.ont_code != "MSH"))
+    try:
+        ont.write_properties(fout,property_docs)
+        if conf_setting("INCLUDE_SEMANTIC_TYPES"):
+          ont.write_semantic_types(sem_types,fout)
+    finally:
+        fout.close()
+    sys.stdout.write("done!\n\n")
+    sys.stdout.flush()
+    return {
+        "sab": umls_code,
+        "file": file_out,
+        "terms_written": ont.terms_written,
+        "term_errors": len(ont.term_errors),
+    }
+
+def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types):
+    """Export every umls.conf entry. One ontology failing (for example a LAT
+    with no UMLS_LANGCODE_MAP entry) is logged and the rest still run.
+    Returns (results, skipped SABs, failed SABs)."""
+    results = []
+    skipped = []
+    failures = []
+    for (umls_code, file_out, load_on_field) in umls_conf:
+        if umls_code.startswith("#"):
+            continue
+        sab = umls_code.split(";")[0]
+        try:
+            result = export_ontology(con, umls_code, file_out, load_on_field,
+                                     output_dir, property_docs, sem_types)
+        except pymysql.err.OperationalError:
+            # Lost connection and similar: every later ontology would fail too.
+            raise
+        except Exception as e:
+            failures.append(sab)
+            sys.stderr.write("ERROR %s: ontology not exported: %s: %s\n" % (
+                sab, type(e).__name__, e))
+            traceback.print_exc()
+            sys.stderr.write("\n")
+            sys.stderr.flush()
+            continue
+        if result is None:
+            skipped.append(sab)
+        else:
+            results.append(result)
+    return results, skipped, failures
+
 
 if __name__ == "__main__":
 
@@ -840,6 +987,7 @@ if __name__ == "__main__":
     output_dir = get_output_dir()
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
+    remove_manifest(output_dir)
 
     sem_types = generate_semantic_types(con,with_roots=True)
     output_file = os.path.join(output_dir,"umls_semantictypes.ttl")
@@ -863,34 +1011,21 @@ if __name__ == "__main__":
             _type = "inverse"
         property_docs[_key][_type] = _expl
 
-    for (umls_code, file_out, load_on_field) in umls_conf:
-        alt_uri_code = None
-        if ";" in umls_code:
-            umls_code,alt_uri_code = umls_code.split(";")
-        if umls_code.startswith("#"):
-            continue
-        load_on_cuis = load_on_field == "load_on_cuis"
-        output_file = os.path.join(output_dir,file_out)
-        sys.stdout.write("Generating %s (using '%s')\n" %
-                (umls_code,load_on_field))
-        sys.stdout.flush()
-        ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
-        ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis)
-        mrsab = UmlsTable("MRSAB", con)
-        ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
-        if getattr(conf, "PROCESS_ONLY_CURRENT_UMLS_VERSION", False) and not ont.should_process_current_version():
-            sys.stdout.write("Skipping %s: IMETA=%s, expected %s\n\n" % (
-                umls_code,
-                ont.mrsab_value(MRSAB_IMETA, "None"),
-                conf.UMLS_VERSION))
-            sys.stdout.flush()
-            continue
-        ont.load_tables()
-        fout = ont.write_into(output_file,hierarchy=(ont.ont_code != "MSH"))
-        ont.write_properties(fout,property_docs)
-        if conf.INCLUDE_SEMANTIC_TYPES:
-          ont.write_semantic_types(sem_types,fout)
-        fout.close()
-        sys.stdout.write("done!\n\n")
-        sys.stdout.flush()
+    results, skipped, ontology_failures = export_ontologies(
+        con, umls_conf, output_dir, property_docs, sem_types)
+    sys.stdout.flush()
+
+    max_errors = conf_setting("MAX_TERM_ERRORS")
+    failed = ontologies_over_error_limit(results, max_errors)
+    if failed or ontology_failures:
+        for r in failed:
+            sys.stderr.write("FAILED %s: %d terms not written (MAX_TERM_ERRORS=%d)\n" % (
+                r["sab"], r["term_errors"], max_errors))
+        for sab in ontology_failures:
+            sys.stderr.write("FAILED %s: ontology not exported\n" % sab)
+        sys.stderr.write("No manifest written; see ERROR lines above.\n")
+        sys.stderr.flush()
+        sys.exit(1)
+    write_manifest(output_dir, results, skipped)
+    sys.stdout.write("Wrote %s\n" % get_manifest_path(output_dir))
     sys.stdout.flush()
