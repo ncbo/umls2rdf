@@ -94,7 +94,11 @@ non-empty.
 a written/failed count per ontology. If any ontology has more failed terms than
 <code>MAX_TERM_ERRORS</code> (default <code>0</code>), it still writes all
 output files but exits with status 1 and does not write
-<code>umls2rdf_manifest.json</code>.
+<code>umls2rdf_manifest.json</code>. An ontology that cannot be exported at all
+(for example, its <code>MRSAB.LAT</code> has no <code>UMLS_LANGCODE_MAP</code>
+entry) is logged as <code>ERROR &lt;SAB&gt;: ontology not exported: ...</code>;
+the remaining ontologies are still exported, and the run then exits with
+status 1 the same way.
 
 If <code>PROCESS_ONLY_CURRENT_UMLS_VERSION</code> is set to <code>True</code>,
 the exporter only processes ontologies whose <code>MRSAB.IMETA</code> exactly
