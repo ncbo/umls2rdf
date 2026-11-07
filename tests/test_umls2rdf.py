@@ -20,6 +20,7 @@ from umls2rdf import (
     get_rel_code_source,
     get_rel_code_target,
     get_umls_conf_path,
+    include_retired_codes,
     ontologies_over_error_limit,
     read_umls_conf,
     remove_manifest,
@@ -566,6 +567,84 @@ class ExportOntologiesTest(unittest.TestCase):
         error = pymysql.err.OperationalError(2013, "Lost connection")
         with self.assertRaises(pymysql.err.OperationalError):
             self.export([error])
+
+
+class RetiredCodesTest(unittest.TestCase):
+    NS = "http://example.org/test/"
+
+    def make_ontology(self):
+        ont = UmlsOntology("TEST", self.NS, con=None, include_retired=True)
+        ont.loaded = True
+        ont.lang = "eng"
+        ont.tree = None
+        current = [
+            make_code_atom("C_CUR", "A_CUR", "CUR", "Current label", tty="PT"),
+            make_code_atom("C_PAR", "A_PAR", "PAR", "Parent label", tty="PT"),
+        ]
+        for atom in current:
+            ont.atoms_by_code[atom[13]].append(len(ont.atoms))
+            ont.atoms_by_aui[atom[7]].append(len(ont.atoms))
+            ont.atoms.append(atom)
+        ont.add_retired_atoms([
+            make_code_atom("C_RET", "A_RET", "RET", "Retired label", tty="OP"),
+            make_code_atom("C_RET", "A_RET2", "RET", "Retired synonym", tty="OF"),
+            # Obsolete name of a current code: must not be added.
+            make_code_atom("C_CUR", "A_CUR_OLD", "CUR", "Old current label", tty="OP"),
+        ])
+        ont.rels = [
+            make_code_rel("C_RET", "A_RET", "C_CUR", "A_CUR", "SY", "same_as"),
+            make_code_rel("C_RET", "A_RET", "C_PAR", "A_PAR", "CHD"),
+            make_code_rel("C_CUR", "A_CUR", "C_RET", "A_RET", "SY", "same_as"),
+            make_code_rel("C_CUR", "A_CUR", "C_PAR", "A_PAR", "CHD"),
+        ]
+        for index, rel in enumerate(ont.rels):
+            ont.rels_by_aui_src[rel[5]].append(index)
+        ont.sty_by_cui = collections.defaultdict(list)
+        return ont
+
+    def render(self, term):
+        with mock.patch.object(conf, "DEDUPE_CLASS_TRIPLES", True, create=True):
+            return term.toRDF(tree=None)
+
+    def test_only_codes_without_current_names_are_retired(self):
+        ont = self.make_ontology()
+        self.assertEqual(ont.retired_codes, {"RET"})
+        self.assertEqual(len(ont.atoms_by_code["RET"]), 2)
+        self.assertEqual(len(ont.atoms_by_code["CUR"]), 1)
+
+    def test_retired_class_is_deprecated_outside_the_tree_with_history_links(self):
+        ont = self.make_ontology()
+        rdf = self.render(ont.build_term("RET"))
+
+        self.assertIn('\towl:deprecated "true"^^xsd:boolean ;', rdf)
+        self.assertIn('skos:prefLabel """Retired label"""@en', rdf)
+        self.assertIn("\t<%ssame_as> <%sCUR> ;" % (self.NS, self.NS), rdf)
+        self.assertNotIn("rdfs:subClassOf", rdf)
+
+    def test_current_class_is_unchanged_by_retired_codes(self):
+        with_retired = self.make_ontology()
+        without = self.make_ontology()
+        without.retired_codes = set()
+        del without.atoms_by_code["RET"]
+        for aui in ("A_RET", "A_RET2"):
+            del without.atoms_by_aui[aui]
+
+        rdf = self.render(with_retired.build_term("CUR"))
+        self.assertEqual(rdf, self.render(without.build_term("CUR")))
+        self.assertNotIn("RET", rdf)
+        self.assertNotIn("owl:deprecated", rdf)
+        self.assertIn("rdfs:subClassOf <%sPAR>" % self.NS, rdf)
+
+    def test_setting_accepts_bool_or_list_of_sabs(self):
+        for value, expected in ((True, True), (False, False), (["SNOMEDCT_US"], True), (["MDR"], False)):
+            with mock.patch("umls2rdf.conf", types.SimpleNamespace(INCLUDE_RETIRED_CODES=value)):
+                self.assertEqual(include_retired_codes("SNOMEDCT_US"), expected)
+        with mock.patch("umls2rdf.conf", types.SimpleNamespace()):
+            self.assertFalse(include_retired_codes("SNOMEDCT_US"))
+
+    def test_load_on_cuis_ignores_the_setting(self):
+        ont = UmlsOntology("TEST", self.NS, con=None, load_on_cuis=True, include_retired=True)
+        self.assertFalse(ont.include_retired)
 
 
 class UmlsConfTest(unittest.TestCase):

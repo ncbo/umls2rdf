@@ -37,6 +37,12 @@ MAX_TERM_ERRORS = 0
 # production list in its own repository and point at it here, e.g.
 # UMLS_CONF = "/srv/ncbo/bioportal_config/umls2rdf/umls.conf"
 
+# Optional: export retired codes (codes whose names are all obsolete in UMLS)
+# as owl:deprecated classes with their history links (e.g. SNOMED CT
+# same_as, replaced_by, possibly_equivalent_to). True for every load_on_codes
+# source, or a list of SABs. Default False: retired codes are left out.
+# INCLUDE_RETIRED_CODES = ["SNOMEDCT_US"]
+
 # Pipeline config
 UMLS_API_KEY = "your umls api key"
 
