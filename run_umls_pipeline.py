@@ -16,7 +16,7 @@ import pymysql
 import conf
 from create_mysql_db import ensure_database
 from download_umls import get_extract_dir
-from umls2rdf import MANIFEST_FILENAME
+from umls2rdf import MANIFEST_FILENAME, get_umls_conf_path, read_umls_conf
 
 
 STEP_DOWNLOAD = "downloaded"
@@ -360,6 +360,12 @@ def validate_config():
     mysql_bin = Path(conf.MYSQL_HOME).expanduser().resolve() / "bin/mysql"
     if not mysql_bin.exists():
         raise RuntimeError("mysql client not found at %s" % mysql_bin)
+
+    # Check the source list now rather than after the download and DB load.
+    umls_conf_path = get_umls_conf_path()
+    if not read_umls_conf(umls_conf_path):
+        raise RuntimeError("Source list %s has no entries." % umls_conf_path)
+    log("Source list: %s" % Path(umls_conf_path).resolve())
 
 
 def main():

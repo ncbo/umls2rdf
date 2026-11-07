@@ -32,6 +32,11 @@ PROCESS_ONLY_CURRENT_UMLS_VERSION = False
 # non-zero and does not write umls2rdf_manifest.json.
 MAX_TERM_ERRORS = 0
 
+# Optional: path to the list of UMLS sources to export (default "umls.conf",
+# relative to the working directory). Start from umls_sample.conf; keep the
+# production list in its own repository and point at it here, e.g.
+# UMLS_CONF = "/srv/ncbo/bioportal_config/umls2rdf/umls.conf"
+
 # Pipeline config
 UMLS_API_KEY = "your umls api key"
 

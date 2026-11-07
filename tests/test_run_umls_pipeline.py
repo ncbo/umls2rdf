@@ -91,6 +91,20 @@ class ValidateLoadedDatabaseTest(unittest.TestCase):
         self.assertIn("table MRDEF is empty", messages[-1])
 
 
+class ValidateConfigSourceListTest(unittest.TestCase):
+    def test_missing_source_list_fails_before_any_download(self):
+        settings = dict(UMLS_VERSION="2025AB", UMLS_API_KEY="k", DB_HOST="h", DB_NAME="d",
+                        DB_USER="u", DB_PASS="p", MYSQL_HOME="/usr",
+                        UMLS_CONF="/nonexistent/umls.conf")
+        with tempfile.TemporaryDirectory() as mysql_home:
+            Path(mysql_home, "bin").mkdir()
+            Path(mysql_home, "bin", "mysql").write_text("")
+            settings["MYSQL_HOME"] = mysql_home
+            with mock.patch.multiple(conf, create=True, **settings), \
+                    self.assertRaisesRegex(FileNotFoundError, "/nonexistent/umls.conf"):
+                run_umls_pipeline.validate_config()
+
+
 class RdfOutputIsReadyTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
