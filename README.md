@@ -5,8 +5,8 @@ Virtual Appliance users can review the [documentation in the OntoPortal Administ
 Recommended workflow:
 
 * Install Python dependencies with <code>pip install -r requirements.txt</code>
-* Configure <code>conf.py</code>
-* Specify the SAB ontologies to export in <code>umls.conf</code>
+* Configure <code>conf.py</code> (start from <code>conf_sample.py</code>)
+* Specify the SAB ontologies to export in <code>umls.conf</code> (start from <code>umls_sample.conf</code>)
 * Run the full resumable import/export pipeline with <code>python run_umls_pipeline.py</code>
 
 Generated TTL files are written under a versioned output directory based on
@@ -14,21 +14,29 @@ Generated TTL files are written under a versioned output directory based on
 <code>OUTPUT_FOLDER = "output/%s" % UMLS_VERSION.upper()</code>, which writes to
 <code>output/2025AB</code>.
 
-The umls.conf configuration file must contain one ontology per line. The lines are comma separated tuples where the elements are:
+The list of sources to export is not tracked in git: copy
+<code>umls_sample.conf</code> to <code>umls.conf</code> and edit it, or keep
+your list elsewhere (for example in a private configuration repository) and set
+<code>UMLS_CONF</code> in <code>conf.py</code> to its path. Relative paths are
+resolved against the directory you run the scripts from.
 
-<em>The following list needs updating.</em>
+The file must contain one ontology per line; blank lines and lines starting
+with <code>#</code> are ignored. The lines are comma separated tuples where the
+elements are:
+
 <pre>
-(0) SAB
-(1) BioPortal Virtual ID. This is optional, any value works.
-(2) Output file name
-(3) Conversion strategy. Accepted values (load_on_codes, load_on_cuis).
+(0) SAB, optionally followed by ;ACRONYM to build class URIs from ACRONYM
+    instead of the SAB (e.g. SNOMEDCT_US;SNOMEDCT)
+(1) Output file name. BioPortal's ncbo_cron matches it (without .ttl) to the
+    ontology acronym.
+(2) Conversion strategy. Accepted values (load_on_codes, load_on_cuis).
 </pre>
 
 Note that 'CCS COSTAR DSM3R DSM4 DXP ICPC2ICD10ENG MCM MMSL MMX MTHCMSFRF MTHMST MTHSPL MTH NDFRT SNM' have no code and should not be loaded on loads_on_codes.
 
 umls2rdf.py is designed to be an offline, run-once process. 
-It's memory intensive and exports all of the default ontologies in umls.conf in 3h 30min. 
-The ontologies listed in umls.conf are the UMLS ontologies accessible in [BioPortal](https://bioportal.bioontology.org/).
+It's memory intensive and exports all of the ontologies in umls_sample.conf in 3h 30min. 
+The ontologies listed in umls_sample.conf are the UMLS ontologies accessible in [BioPortal](https://bioportal.bioontology.org/), plus MED-RT (the successor of NDF-RT), which is not in BioPortal yet.
 
 To download the full UMLS release archive outside the full pipeline, run:
 

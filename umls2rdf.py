@@ -106,10 +106,34 @@ CONF_DEFAULTS = {
     "INCLUDE_SEMANTIC_TYPES": True,
     "PROCESS_ONLY_CURRENT_UMLS_VERSION": False,
     "MAX_TERM_ERRORS": 0,
+    # List of sources to export. Relative paths are resolved against the
+    # working directory, as umls.conf always was.
+    "UMLS_CONF": "umls.conf",
 }
+
+UMLS_CONF_SAMPLE = "umls_sample.conf"
 
 def conf_setting(name):
     return getattr(conf, name, CONF_DEFAULTS[name])
+
+def get_umls_conf_path():
+    return os.path.expanduser(conf_setting("UMLS_CONF"))
+
+def read_umls_conf(path):
+    """Return the entries of a umls.conf file as lists of fields, skipping
+    blank lines and lines starting with '#'."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            "Source list %s not found. Copy %s to umls.conf and edit it, or "
+            "set UMLS_CONF in conf.py to the file's path." % (path, UMLS_CONF_SAMPLE))
+    entries = []
+    with open(path, "r") as fconf:
+        for line in fconf.read().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            entries.append([field.strip() for field in line.split(",")])
+    return entries
 
 def get_language_tag(lat, ont_code):
     if lat not in UMLS_LANGCODE_MAP:
@@ -974,15 +998,14 @@ def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types):
 
 if __name__ == "__main__":
 
-    con = __get_connection()
+    # Read the source list before connecting, so a missing file fails fast.
+    umls_conf_path = get_umls_conf_path()
+    umls_conf = read_umls_conf(umls_conf_path)
+    sys.stdout.write("Using source list %s (%d entries)\n" % (
+        os.path.abspath(umls_conf_path), len(umls_conf)))
+    sys.stdout.flush()
 
-    umls_conf = None
-    with open("umls.conf","r") as fconf:
-        umls_conf = [line.split(",") \
-                        for line in fconf.read().splitlines() \
-                            if len(line) > 0]
-        umls_conf = [x for x in umls_conf if not x[0].startswith("#")]
-        fconf.close()
+    con = __get_connection()
 
     output_dir = get_output_dir()
     if not os.path.isdir(output_dir):

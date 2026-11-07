@@ -19,7 +19,9 @@ from umls2rdf import (
     get_language_tag,
     get_rel_code_source,
     get_rel_code_target,
+    get_umls_conf_path,
     ontologies_over_error_limit,
+    read_umls_conf,
     remove_manifest,
     write_manifest,
 )
@@ -564,6 +566,37 @@ class ExportOntologiesTest(unittest.TestCase):
         error = pymysql.err.OperationalError(2013, "Lost connection")
         with self.assertRaises(pymysql.err.OperationalError):
             self.export([error])
+
+
+class UmlsConfTest(unittest.TestCase):
+    def test_reads_entries_skipping_comments_and_blank_lines(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "umls.conf")
+            with open(path, "w") as fconf:
+                fconf.write("AIR,AI-RHEUM.ttl,load_on_codes\n"
+                            "#CPT,CPT.ttl,load_on_codes #disabled\n"
+                            "\n   \n"
+                            "MSH;MESH, MESH.ttl ,load_on_codes \n")
+            self.assertEqual(read_umls_conf(path), [
+                ["AIR", "AI-RHEUM.ttl", "load_on_codes"],
+                ["MSH;MESH", "MESH.ttl", "load_on_codes"],
+            ])
+
+    def test_missing_file_points_at_sample_and_setting(self):
+        with self.assertRaisesRegex(FileNotFoundError, "umls_sample.conf.*UMLS_CONF"):
+            read_umls_conf("/nonexistent/umls.conf")
+
+    def test_path_defaults_to_umls_conf_and_follows_setting(self):
+        with mock.patch("umls2rdf.conf", types.SimpleNamespace()):
+            self.assertEqual(get_umls_conf_path(), "umls.conf")
+        with mock.patch("umls2rdf.conf", types.SimpleNamespace(UMLS_CONF="~/cfg/umls.conf")):
+            self.assertEqual(get_umls_conf_path(), os.path.expanduser("~/cfg/umls.conf"))
+
+    def test_sample_conf_parses(self):
+        sample = os.path.join(os.path.dirname(__file__), "..", "umls_sample.conf")
+        entries = read_umls_conf(sample)
+        self.assertIn(["MED-RT;MEDRT", "MEDRT.ttl", "load_on_codes"], entries)
+        self.assertTrue(all(len(e) == 3 for e in entries))
 
 
 class ManifestTest(unittest.TestCase):
