@@ -570,11 +570,11 @@ class ExportOntologiesTest(unittest.TestCase):
             self.export([error])
 
 
-class RetiredCodesTest(unittest.TestCase):
+class ObsoleteCodesTest(unittest.TestCase):
     NS = "http://example.org/test/"
 
     def make_ontology(self):
-        ont = UmlsOntology("TEST", self.NS, con=None, include_retired=True)
+        ont = UmlsOntology("TEST", self.NS, con=None, include_obsolete=True)
         ont.loaded = True
         ont.lang = "eng"
         ont.tree = None
@@ -586,9 +586,9 @@ class RetiredCodesTest(unittest.TestCase):
             ont.atoms_by_code[atom[13]].append(len(ont.atoms))
             ont.atoms_by_aui[atom[7]].append(len(ont.atoms))
             ont.atoms.append(atom)
-        ont.add_retired_atoms([
-            make_code_atom("C_RET", "A_RET", "RET", "Retired label", tty="OP"),
-            make_code_atom("C_RET", "A_RET2", "RET", "Retired synonym", tty="OF"),
+        ont.add_obsolete_codes([
+            make_code_atom("C_RET", "A_RET", "RET", "Obsolete label", tty="OP"),
+            make_code_atom("C_RET", "A_RET2", "RET", "Obsolete synonym", tty="OF"),
             # Obsolete name of a current code: must not be added.
             make_code_atom("C_CUR", "A_CUR_OLD", "CUR", "Old current label", tty="OP"),
         ])
@@ -607,38 +607,38 @@ class RetiredCodesTest(unittest.TestCase):
         with mock.patch.object(conf, "DEDUPE_CLASS_TRIPLES", True, create=True):
             return term.toRDF(tree=None)
 
-    def test_only_codes_without_current_names_are_retired(self):
+    def test_only_codes_without_current_names_are_obsolete(self):
         ont = self.make_ontology()
-        self.assertEqual(ont.retired_codes, {"RET"})
+        self.assertEqual(ont.obsolete_codes, {"RET"})
         self.assertEqual(len(ont.atoms_by_code["RET"]), 2)
         self.assertEqual(len(ont.atoms_by_code["CUR"]), 1)
 
-    def test_retired_class_is_deprecated_outside_the_tree_with_history_links(self):
+    def test_obsolete_class_is_deprecated_outside_the_tree_with_history_links(self):
         ont = self.make_ontology()
         rdf = self.render(ont.build_term("RET"))
 
         self.assertIn('\towl:deprecated "true"^^xsd:boolean ;', rdf)
-        self.assertIn('skos:prefLabel """Retired label"""@en', rdf)
+        self.assertIn('skos:prefLabel """Obsolete label"""@en', rdf)
         self.assertIn("\t<%ssame_as> <%sCUR> ;" % (self.NS, self.NS), rdf)
         self.assertNotIn("rdfs:subClassOf", rdf)
 
-    def test_current_class_is_unchanged_by_retired_codes(self):
-        with_retired = self.make_ontology()
+    def test_current_class_is_unchanged_by_obsolete_codes(self):
+        with_obsolete = self.make_ontology()
         without = self.make_ontology()
-        without.retired_codes = set()
+        without.obsolete_codes = set()
         del without.atoms_by_code["RET"]
         for aui in ("A_RET", "A_RET2"):
             del without.atoms_by_aui[aui]
 
-        rdf = self.render(with_retired.build_term("CUR"))
+        rdf = self.render(with_obsolete.build_term("CUR"))
         self.assertEqual(rdf, self.render(without.build_term("CUR")))
         self.assertNotIn("RET", rdf)
         self.assertNotIn("owl:deprecated", rdf)
         self.assertIn("rdfs:subClassOf <%sPAR>" % self.NS, rdf)
 
     def test_load_on_cuis_ignores_the_setting(self):
-        ont = UmlsOntology("TEST", self.NS, con=None, load_on_cuis=True, include_retired=True)
-        self.assertFalse(ont.include_retired)
+        ont = UmlsOntology("TEST", self.NS, con=None, load_on_cuis=True, include_obsolete=True)
+        self.assertFalse(ont.include_obsolete)
 
 
 class UmlsConfTest(unittest.TestCase):
@@ -655,9 +655,9 @@ class UmlsConfTest(unittest.TestCase):
                 ["MSH;MESH", "MESH.ttl", "load_on_codes", False],
             ])
 
-    def test_include_retired_option(self):
+    def test_include_obsolete_option(self):
         self.assertEqual(
-            parse_umls_conf_line("SNOMEDCT_US;SNOMEDCT,SNOMEDCT.ttl,load_on_codes, include_retired", "x"),
+            parse_umls_conf_line("SNOMEDCT_US;SNOMEDCT,SNOMEDCT.ttl,load_on_codes, include_obsolete", "x"),
             ["SNOMEDCT_US;SNOMEDCT", "SNOMEDCT.ttl", "load_on_codes", True])
         self.assertEqual(parse_umls_conf_line("AIR,AIR.ttl,load_on_codes,", "x"),
                          ["AIR", "AIR.ttl", "load_on_codes", False])
@@ -665,9 +665,9 @@ class UmlsConfTest(unittest.TestCase):
     def test_malformed_lines_fail_naming_the_line(self):
         for line, message in (
                 ("AIR,AIR.ttl", "expected SAB,file,strategy"),
-                ("AIR,AIR.ttl,load_on_codes,include_retired,extra", "expected SAB,file,strategy"),
-                ("AIR,AIR.ttl,load_on_codes,include_obsolete", "unknown option 'include_obsolete'"),
-                ("HL7,HL7.ttl,load_on_cuis,include_retired", "include_retired needs load_on_codes")):
+                ("AIR,AIR.ttl,load_on_codes,include_obsolete,extra", "expected SAB,file,strategy"),
+                ("AIR,AIR.ttl,load_on_codes,include_retired", "unknown option 'include_retired'"),
+                ("HL7,HL7.ttl,load_on_cuis,include_obsolete", "include_obsolete needs load_on_codes")):
             with self.assertRaisesRegex(ValueError, "umls.conf:2: " + message):
                 parse_umls_conf_line(line, "umls.conf:2")
 

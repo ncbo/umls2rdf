@@ -120,21 +120,21 @@ def get_umls_conf_path():
     return os.path.expanduser(conf_setting("UMLS_CONF"))
 
 def parse_umls_conf_line(line, where):
-    """Return [SAB, output file, strategy, include_retired] for one umls.conf
+    """Return [SAB, output file, strategy, include_obsolete] for one umls.conf
     line. A malformed line raises ValueError naming it."""
     fields = [field.strip() for field in line.split(",")]
     if len(fields) not in (3, 4):
-        raise ValueError("%s: expected SAB,file,strategy[,include_retired], got %r"
+        raise ValueError("%s: expected SAB,file,strategy[,include_obsolete], got %r"
                          % (where, line))
     umls_code, file_out, load_on_field = fields[:3]
     option = fields[3] if len(fields) == 4 else ""
-    if option not in ("", "include_retired"):
-        raise ValueError("%s: unknown option %r; the only option is include_retired"
+    if option not in ("", "include_obsolete"):
+        raise ValueError("%s: unknown option %r; the only option is include_obsolete"
                          % (where, option))
-    include_retired = option == "include_retired"
-    if include_retired and load_on_field == "load_on_cuis":
-        raise ValueError("%s: include_retired needs load_on_codes" % where)
-    return [umls_code, file_out, load_on_field, include_retired]
+    include_obsolete = option == "include_obsolete"
+    if include_obsolete and load_on_field == "load_on_cuis":
+        raise ValueError("%s: include_obsolete needs load_on_codes" % where)
+    return [umls_code, file_out, load_on_field, include_obsolete]
 
 def read_umls_conf(path):
     """Return the entries of a umls.conf file (see parse_umls_conf_line),
@@ -331,9 +331,9 @@ class UmlsClass(object):
                  defs=None,atts=None,rank=None,
                  rank_by_tty=None,sty=None,
                  sty_by_cui=None,load_on_cuis=False,
-                 is_root=None,is_retired=False):
+                 is_root=None,is_obsolete=False):
         self.ns = ns
-        self.is_retired = is_retired
+        self.is_obsolete = is_obsolete
         self.atoms = atoms
         self.rels = rels
         self.defs = defs
@@ -471,7 +471,7 @@ class UmlsClass(object):
 \tskos:prefLabel \"\"\"%s\"\"\"@%s ;
 \tskos:notation \"\"\"%s\"\"\"^^xsd:string ;
 """%(url_term,escape(prefLabel),lang,escape(term_code))
-        if self.is_retired:
+        if self.is_obsolete:
             rdf_term += "\towl:deprecated \"true\"^^xsd:boolean ;\n"
 
         seen_triples = set() if self._dedupe_repeated_triples() else None
@@ -603,12 +603,12 @@ class UmlsAttribute(object):
 
 
 class UmlsOntology(object):
-    def __init__(self,ont_code,ns,con,load_on_cuis=False,include_retired=False):
+    def __init__(self,ont_code,ns,con,load_on_cuis=False,include_obsolete=False):
         self.loaded = False
         self.ont_code = ont_code
-        # Retired codes are a code-level notion, so only in load_on_codes mode.
-        self.include_retired = include_retired and not load_on_cuis
-        self.retired_codes = set()
+        # Obsolete codes are a code-level notion, so only in load_on_codes mode.
+        self.include_obsolete = include_obsolete and not load_on_cuis
+        self.obsolete_codes = set()
         self.ns = ns
         self.con = con
         self.load_on_cuis = load_on_cuis
@@ -683,12 +683,12 @@ class UmlsOntology(object):
             sys.stderr.write("atom example: %s\n\n" % str(self.atoms))
             sys.stderr.flush()
 
-        if self.include_retired:
+        if self.include_obsolete:
             mrconso_filt = "SAB = '%s' AND lat = '%s' AND SUPPRESS = 'O'"%(
                                                     self.ont_code,self.lang)
-            self.add_retired_atoms(mrconso.scan(filt=mrconso_filt,limit=limit))
-            sys.stdout.write("%s retired codes: %d\n" % (
-                self.ont_code, len(self.retired_codes)))
+            self.add_obsolete_codes(mrconso.scan(filt=mrconso_filt,limit=limit))
+            sys.stdout.write("%s obsolete codes: %d\n" % (
+                self.ont_code, len(self.obsolete_codes)))
             sys.stdout.flush()
 
         mrconso_filt = "SAB = 'SRC' AND CODE = 'V-%s'"%self.ont_code
@@ -744,9 +744,9 @@ class UmlsOntology(object):
         #
         load_mrsty = "SELECT sty.* FROM MRSTY sty, MRCONSO conso \
         WHERE conso.SAB = '%s' AND conso.cui = sty.cui AND conso.suppress %s"
-        # Retired codes' CUIs are only reachable through their obsolete atoms.
+        # Obsolete codes' CUIs are only reachable through their obsolete atoms.
         load_mrsty %= (self.ont_code,
-                       "IN ('N','O')" if self.include_retired else "= 'N'")
+                       "IN ('N','O')" if self.include_obsolete else "= 'N'")
         mrsty = UmlsTable("MRSTY",self.con,load_select=load_mrsty)
         for sty in mrsty.scan(filt=None):
             index = len(self.sty)
@@ -760,10 +760,10 @@ class UmlsOntology(object):
         sys.stdout.write("%s tables loaded ...\n" % self.ont_code)
         sys.stdout.flush()
 
-    def add_retired_atoms(self, obsolete_atoms):
+    def add_obsolete_codes(self, obsolete_atoms):
         """Add the obsolete ('O') atoms of codes that have no current atom.
 
-        Such codes are retired: the source no longer uses them, but UMLS still
+        Such codes are obsolete: the source no longer uses them, but UMLS still
         ships their names and the source's history links (SNOMED CT's same_as,
         replaced_by, possibly_equivalent_to, ...). They are exported as
         owl:deprecated classes so their URIs keep resolving and point to their
@@ -779,7 +779,7 @@ class UmlsOntology(object):
             self.atoms_by_code[code].append(index)
             self.atoms_by_aui[atom[MRCONSO_AUI]].append(index)
             self.atoms.append(atom)
-            self.retired_codes.add(code)
+            self.obsolete_codes.add(code)
 
     def terms(self):
         if not self.loaded:
@@ -789,7 +789,7 @@ class UmlsOntology(object):
 
     def build_term(self, code):
         # Note: most UMLS ontologies are 'load_on_codes' (only HL7 is load_on_cuis)
-        retired = code in self.retired_codes
+        obsolete = code in self.obsolete_codes
         code_atoms = [self.atoms[row] for row in self.atoms_by_code[code]]
         field = MRCONSO_CUI if self.load_on_cuis else MRCONSO_AUI
         ids = [x[field] for x in code_atoms]
@@ -827,12 +827,12 @@ class UmlsOntology(object):
                     code_source[0] != code_target[0]:
                     code_source = code_source[0]
                     code_target = code_target[0]
-                    if code_target in self.retired_codes and not retired:
-                        # Leave out links from current codes to retired ones,
-                        # so current classes are exactly as without retired codes.
+                    if code_target in self.obsolete_codes and not obsolete:
+                        # Leave out links from current codes to obsolete ones,
+                        # so current classes are exactly as without obsolete codes.
                         continue
-                    if retired and rel[MRREL_REL] in ('CHD', 'PAR'):
-                        # Retired codes stay out of the class tree.
+                    if obsolete and rel[MRREL_REL] in ('CHD', 'PAR'):
+                        # Obsolete codes stay out of the class tree.
                         continue
                     # NOTE: the order of these append operations below is important.
                     # get_rel_code_source() - it uses [-1]
@@ -849,8 +849,8 @@ class UmlsOntology(object):
         umls_class = UmlsClass(self.ns,atoms=code_atoms,rels=rels_to_class,
             defs=defs,atts=atts,rank=self.rank,rank_by_tty=self.rank_by_tty,
             sty=self.sty, sty_by_cui=self.sty_by_cui,
-            load_on_cuis=self.load_on_cuis,is_root=is_root and not retired,
-            is_retired=retired)
+            load_on_cuis=self.load_on_cuis,is_root=is_root and not obsolete,
+            is_obsolete=obsolete)
 
         # TODO: patch to fix roots in SNOMED-CT
         # suppress should fix this one
@@ -884,7 +884,7 @@ class UmlsOntology(object):
         )))
         duplicate_counts = self._empty_duplicate_counts()
         self.terms_written = 0
-        self.retired_written = 0
+        self.obsolete_written = 0
         self.term_errors = []
         # Build each term inside the try: an exception raised while building
         # a term from inside the terms() generator would end the generator
@@ -896,8 +896,8 @@ class UmlsOntology(object):
                 rdf_text = term.toRDF(lang=lang_tag,tree=self.tree)
                 fout.write(rdf_text)
                 self.terms_written += 1
-                if term.is_retired:
-                    self.retired_written += 1
+                if term.is_obsolete:
+                    self.obsolete_written += 1
                 for kind, count in term.duplicate_triples_skipped.items():
                     duplicate_counts[kind] += count
             except Exception as e:
@@ -912,8 +912,8 @@ class UmlsOntology(object):
                 if att not in self.ont_properties:
                     self.ont_properties[att] = term.properties()[att]
 
-        sys.stdout.write("%s terms written: %d (retired: %d), failed: %d\n" % (
-            self.ont_code, self.terms_written, self.retired_written,
+        sys.stdout.write("%s terms written: %d (obsolete: %d), failed: %d\n" % (
+            self.ont_code, self.terms_written, self.obsolete_written,
             len(self.term_errors)))
         sys.stdout.flush()
 
@@ -992,7 +992,7 @@ def write_manifest(output_dir, ontologies, skipped):
 def ontologies_over_error_limit(results, max_errors):
     return [r for r in results if r["term_errors"] > max_errors]
 
-def export_ontology(con, umls_code, file_out, load_on_field, include_retired,
+def export_ontology(con, umls_code, file_out, load_on_field, include_obsolete,
                     output_dir, property_docs, sem_types):
     """Write one umls.conf entry. Returns its manifest entry, or None if skipped."""
     alt_uri_code = None
@@ -1005,7 +1005,7 @@ def export_ontology(con, umls_code, file_out, load_on_field, include_retired,
     sys.stdout.flush()
     ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
     ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis,
-                       include_retired=include_retired)
+                       include_obsolete=include_obsolete)
     mrsab = UmlsTable("MRSAB", con)
     ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
     if conf_setting("PROCESS_ONLY_CURRENT_UMLS_VERSION") and not ont.should_process_current_version():
@@ -1029,7 +1029,7 @@ def export_ontology(con, umls_code, file_out, load_on_field, include_retired,
         "sab": umls_code,
         "file": file_out,
         "terms_written": ont.terms_written,
-        "retired_written": ont.retired_written,
+        "obsolete_written": ont.obsolete_written,
         "term_errors": len(ont.term_errors),
     }
 
@@ -1040,13 +1040,13 @@ def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types):
     results = []
     skipped = []
     failures = []
-    for (umls_code, file_out, load_on_field, include_retired) in umls_conf:
+    for (umls_code, file_out, load_on_field, include_obsolete) in umls_conf:
         if umls_code.startswith("#"):
             continue
         sab = umls_code.split(";")[0]
         try:
             result = export_ontology(con, umls_code, file_out, load_on_field,
-                                     include_retired, output_dir, property_docs,
+                                     include_obsolete, output_dir, property_docs,
                                      sem_types)
         except pymysql.err.OperationalError:
             # Lost connection and similar: every later ontology would fail too.
