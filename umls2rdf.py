@@ -103,8 +103,6 @@ UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cs", "fin" : "fi", "ge
 # step is complete.
 MANIFEST_FILENAME = "umls2rdf_manifest.json"
 
-# pav:createdWith points at the umls2rdf code that wrote the file.
-UMLS2RDF_REPO_URL = "https://github.com/ncbo/umls2rdf"
 
 # dcterms:language values. BioPortal reads them into naturalLanguage.
 LEXVO_ISO639_1 = "http://lexvo.org/id/iso639-1/"
@@ -177,24 +175,22 @@ def run_git(*args):
     return result.stdout.strip()
 
 def get_umls2rdf_tool():
-    """(URL, label) of the umls2rdf code running now, for pav:createdWith.
-    At a release tag: the release page and "umls2rdf v1.3.0". Otherwise the
-    commit (short hash) and the git describe name, such as
-    "umls2rdf v1.2.0-8-g3c22d00". None (with a warning) when this is not a
+    """Name and version of the umls2rdf code running now, for
+    pav:createdWith: "umls2rdf " plus its git describe name, such as
+    "umls2rdf v1.3.0" at a release tag, "umls2rdf v1.2.0-8-g3c22d00" after
+    it, and a "-dirty" suffix when the checkout has uncommitted changes.
+    BioPortal stores this string as the submission's
+    usedOntologyEngineeringTool. None (with a warning) when this is not a
     git checkout."""
-    commit = run_git("rev-parse", "--short", "HEAD")
-    if not commit:
-        warn("umls2rdf", "cannot read the git commit of this checkout; "
+    name = run_git("describe", "--tags", "--always", "--dirty")
+    if not name:
+        warn("umls2rdf", "cannot read the git version of this checkout; "
              "leaving pav:createdWith out of the headers")
         return None
-    if run_git("status", "--porcelain", "--untracked-files=no"):
+    if name.endswith("-dirty"):
         warn("umls2rdf", "this checkout has uncommitted changes; "
-             "pav:createdWith names commit %s, which does not include them" % commit)
-    tag = run_git("describe", "--tags", "--exact-match", "HEAD")
-    if tag:
-        return "%s/releases/tag/%s" % (UMLS2RDF_REPO_URL, tag), "umls2rdf %s" % tag
-    name = run_git("describe", "--tags", "--always", "--dirty") or commit
-    return "%s/tree/%s" % (UMLS2RDF_REPO_URL, commit), "umls2rdf %s" % name
+             "pav:createdWith says umls2rdf %s" % name)
+    return "umls2rdf %s" % name
 
 def get_umls_release_docs(mrdoc_records):
     """Collect the MRDOC rows the ontology header uses: the UMLS release date
@@ -755,15 +751,8 @@ class UmlsOntology(object):
             lines.append("dcterms:license <%s>" % license_uri)
             lines.append("cc:useGuidelines %s" % turtle_string(use_guidelines, lang="en"))
         if self.tool:
-            lines.append("pav:createdWith <%s>" % self.tool[0])
+            lines.append("pav:createdWith %s" % turtle_string(self.tool))
         return "".join(" ;\n    %s" % line for line in lines)
-
-    def ontology_tool_label(self):
-        """rdfs:label for the pav:createdWith URL. BioPortal shows the label
-        rather than the URL."""
-        if not self.tool:
-            return ""
-        return "<%s> rdfs:label %s .\n\n" % (self.tool[0], turtle_string(self.tool[1]))
 
     def should_process_current_version(self):
         return self.mrsab_value(MRSAB_IMETA) == conf.UMLS_VERSION
@@ -950,7 +939,6 @@ class UmlsOntology(object):
             source=turtle_string(self.ontology_source()),
             optional_lines=self.ontology_optional_lines(lang_tag)
         )))
-        fout.write(self.ontology_tool_label())
         duplicate_counts = self._empty_duplicate_counts()
         self.terms_written = 0
         self.term_errors = []
