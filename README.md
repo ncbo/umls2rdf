@@ -108,20 +108,20 @@ entry) is logged as <code>ERROR &lt;SAB&gt;: ontology not exported: ...</code>;
 the remaining ontologies are still exported, and the run then exits with
 status 1 the same way.
 
-Each file starts with an <code>owl:Ontology</code> header built from
-<code>MRSAB</code> and <code>MRDOC</code>. BioPortal's metadata extraction
-copies these into the submission:
+Each file starts with an <code>owl:Ontology</code> header that describes the
+source, built from <code>MRSAB</code> and <code>MRDOC</code>:
 
 <table>
-<tr><th>Header property</th><th>Value from</th><th>BioPortal field</th></tr>
-<tr><td><code>owl:versionInfo</code></td><td><code>MRSAB.SVER</code></td><td>version</td></tr>
-<tr><td><code>dcterms:issued</code></td><td>MRDOC <code>umls.release.date</code> (the UMLS release date)</td><td>released</td></tr>
-<tr><td><code>dcterms:language</code></td><td><code>MRSAB.LAT</code>, as a lexvo ISO 639-1 URI</td><td>naturalLanguage</td></tr>
-<tr><td><code>dcterms:license</code></td><td>MRDOC <code>uri</code> for the source's <code>MRSAB.SRL</code></td><td>hasLicense</td></tr>
-<tr><td><code>cc:useGuidelines</code></td><td>a fixed notice plus MRDOC <code>expanded_form</code> for <code>MRSAB.SRL</code></td><td>useGuidelines</td></tr>
-<tr><td><code>dcterms:source</code></td><td><code>MRSAB.IMETA</code></td><td>source</td></tr>
-<tr><td><code>skos:altLabel</code></td><td><code>MRSAB.RSAB</code></td><td>alternative</td></tr>
-<tr><td><code>pav:createdWith</code></td><td>the umls2rdf git checkout: its release page if <code>HEAD</code> is a release tag, otherwise its commit, labelled with the release or <code>git describe</code> name (for example <code>umls2rdf v1.2.0-8-g3c22d00</code>)</td><td>usedOntologyEngineeringTool (BioPortal shows the label)</td></tr>
+<tr><th>Header property</th><th>Value from</th></tr>
+<tr><td><code>rdfs:label</code></td><td><code>MRSAB.SSN</code></td></tr>
+<tr><td><code>skos:altLabel</code></td><td><code>MRSAB.RSAB</code></td></tr>
+<tr><td><code>owl:versionInfo</code></td><td><code>MRSAB.SVER</code></td></tr>
+<tr><td><code>dcterms:source</code></td><td><code>MRSAB.IMETA</code></td></tr>
+<tr><td><code>dcterms:issued</code></td><td>MRDOC <code>umls.release.date</code> (the UMLS release date)</td></tr>
+<tr><td><code>dcterms:language</code></td><td><code>MRSAB.LAT</code>, as a lexvo ISO 639-1 URI</td></tr>
+<tr><td><code>dcterms:license</code></td><td>MRDOC <code>uri</code> for the source's restriction level, <code>MRSAB.SRL</code></td></tr>
+<tr><td><code>cc:useGuidelines</code></td><td>a notice that a UMLS Metathesaurus License is required, plus MRDOC <code>expanded_form</code> for <code>MRSAB.SRL</code></td></tr>
+<tr><td><code>pav:createdWith</code></td><td>the umls2rdf code that wrote the file: its release page if <code>HEAD</code> is a release tag, otherwise its commit, with an <code>rdfs:label</code> such as <code>umls2rdf v1.3.0</code> or <code>umls2rdf v1.2.0-8-g3c22d00</code></td></tr>
 </table>
 
 If the release date or the license data is missing, <code>umls2rdf.py</code>
