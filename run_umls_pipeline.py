@@ -291,8 +291,8 @@ def validate_loaded_database(meta_dir):
         connection = pymysql.connect(
             host=conf.DB_HOST,
             user=conf.DB_USER,
-            passwd=conf.DB_PASS,
-            db=conf.DB_NAME,
+            password=conf.DB_PASS,
+            database=conf.DB_NAME,
             charset="utf8mb4",
         )
     except pymysql.MySQLError as error:

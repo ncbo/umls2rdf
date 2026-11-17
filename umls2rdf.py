@@ -278,7 +278,7 @@ def get_code(reg,load_on_cuis):
 
 def __get_connection():
     con = pymysql.connect(host=conf.DB_HOST,user=conf.DB_USER,
-              passwd=conf.DB_PASS,db=conf.DB_NAME)
+              password=conf.DB_PASS,database=conf.DB_NAME)
     # UmlsTable.scan streams rows; give the server more than the default 60s
     # to wait on the client between network writes.
     with con.cursor() as cursor:

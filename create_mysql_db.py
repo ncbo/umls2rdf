@@ -11,7 +11,7 @@ def connect_server():
     return pymysql.connect(
         host=conf.DB_HOST,
         user=conf.DB_USER,
-        passwd=conf.DB_PASS,
+        password=conf.DB_PASS,
         charset="utf8mb4",
         autocommit=True,
     )
