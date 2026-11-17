@@ -30,7 +30,17 @@ elements are:
 (1) Output file name. BioPortal's ncbo_cron matches it (without .ttl) to the
     ontology acronym.
 (2) Conversion strategy. Accepted values (load_on_codes, load_on_cuis).
+(3) Optional: include_retired to also export retired codes, i.e. codes whose
+    names are all obsolete in UMLS, as owl:deprecated classes with their
+    history links (e.g. SNOMED CT same_as, replaced_by,
+    possibly_equivalent_to). They are kept out of the class tree. Only for
+    load_on_codes sources. Example:
+    SNOMEDCT_US;SNOMEDCT,SNOMEDCT.ttl,load_on_codes,include_retired
 </pre>
+
+A line with the wrong number of fields, an unknown option, or
+<code>include_retired</code> on a <code>load_on_cuis</code> source stops the
+run before anything is exported.
 
 Note that 'CCS COSTAR DSM3R DSM4 DXP ICPC2ICD10ENG MCM MMSL MMX MTHCMSFRF MTHMST MTHSPL MTH NDFRT SNM' have no code and should not be loaded on loads_on_codes.
 

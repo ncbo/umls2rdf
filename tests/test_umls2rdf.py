@@ -20,8 +20,8 @@ from umls2rdf import (
     get_rel_code_source,
     get_rel_code_target,
     get_umls_conf_path,
-    include_retired_codes,
     ontologies_over_error_limit,
+    parse_umls_conf_line,
     read_umls_conf,
     remove_manifest,
     write_manifest,
@@ -540,10 +540,10 @@ class UmlsTableScanTest(unittest.TestCase):
 
 class ExportOntologiesTest(unittest.TestCase):
     UMLS_CONF = [
-        ["MDRISL", "MDRISL.ttl", "load_on_codes"],
-        ["#OLD", "OLD.ttl", "load_on_codes"],
-        ["ICD10;ICD10ALT", "ICD10.ttl", "load_on_codes"],
-        ["AIR", "AIR.ttl", "load_on_codes"],
+        ["MDRISL", "MDRISL.ttl", "load_on_codes", False],
+        ["#OLD", "OLD.ttl", "load_on_codes", False],
+        ["ICD10;ICD10ALT", "ICD10.ttl", "load_on_codes", True],
+        ["AIR", "AIR.ttl", "load_on_codes", False],
     ]
 
     def export(self, side_effect):
@@ -562,6 +562,7 @@ class ExportOntologiesTest(unittest.TestCase):
         self.assertEqual(skipped, ["AIR"])
         self.assertEqual(failures, ["MDRISL"])
         self.assertIn("ERROR MDRISL: ontology not exported: ValueError", stderr)
+        self.assertEqual([c.args[4] for c in export_one.call_args_list], [False, True, False])
 
     def test_lost_connection_stops_the_run(self):
         error = pymysql.err.OperationalError(2013, "Lost connection")
@@ -635,13 +636,6 @@ class RetiredCodesTest(unittest.TestCase):
         self.assertNotIn("owl:deprecated", rdf)
         self.assertIn("rdfs:subClassOf <%sPAR>" % self.NS, rdf)
 
-    def test_setting_accepts_bool_or_list_of_sabs(self):
-        for value, expected in ((True, True), (False, False), (["SNOMEDCT_US"], True), (["MDR"], False)):
-            with mock.patch("umls2rdf.conf", types.SimpleNamespace(INCLUDE_RETIRED_CODES=value)):
-                self.assertEqual(include_retired_codes("SNOMEDCT_US"), expected)
-        with mock.patch("umls2rdf.conf", types.SimpleNamespace()):
-            self.assertFalse(include_retired_codes("SNOMEDCT_US"))
-
     def test_load_on_cuis_ignores_the_setting(self):
         ont = UmlsOntology("TEST", self.NS, con=None, load_on_cuis=True, include_retired=True)
         self.assertFalse(ont.include_retired)
@@ -657,9 +651,33 @@ class UmlsConfTest(unittest.TestCase):
                             "\n   \n"
                             "MSH;MESH, MESH.ttl ,load_on_codes \n")
             self.assertEqual(read_umls_conf(path), [
-                ["AIR", "AI-RHEUM.ttl", "load_on_codes"],
-                ["MSH;MESH", "MESH.ttl", "load_on_codes"],
+                ["AIR", "AI-RHEUM.ttl", "load_on_codes", False],
+                ["MSH;MESH", "MESH.ttl", "load_on_codes", False],
             ])
+
+    def test_include_retired_option(self):
+        self.assertEqual(
+            parse_umls_conf_line("SNOMEDCT_US;SNOMEDCT,SNOMEDCT.ttl,load_on_codes, include_retired", "x"),
+            ["SNOMEDCT_US;SNOMEDCT", "SNOMEDCT.ttl", "load_on_codes", True])
+        self.assertEqual(parse_umls_conf_line("AIR,AIR.ttl,load_on_codes,", "x"),
+                         ["AIR", "AIR.ttl", "load_on_codes", False])
+
+    def test_malformed_lines_fail_naming_the_line(self):
+        for line, message in (
+                ("AIR,AIR.ttl", "expected SAB,file,strategy"),
+                ("AIR,AIR.ttl,load_on_codes,include_retired,extra", "expected SAB,file,strategy"),
+                ("AIR,AIR.ttl,load_on_codes,include_obsolete", "unknown option 'include_obsolete'"),
+                ("HL7,HL7.ttl,load_on_cuis,include_retired", "include_retired needs load_on_codes")):
+            with self.assertRaisesRegex(ValueError, "umls.conf:2: " + message):
+                parse_umls_conf_line(line, "umls.conf:2")
+
+    def test_reader_reports_file_and_line_number(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "umls.conf")
+            with open(path, "w") as fconf:
+                fconf.write("# comment\nAIR,AIR.ttl,load_on_codes\nHL7,HL7.ttl\n")
+            with self.assertRaisesRegex(ValueError, "umls.conf:3: "):
+                read_umls_conf(path)
 
     def test_missing_file_points_at_sample_and_setting(self):
         with self.assertRaisesRegex(FileNotFoundError, "umls_sample.conf.*UMLS_CONF"):
@@ -674,8 +692,7 @@ class UmlsConfTest(unittest.TestCase):
     def test_sample_conf_parses(self):
         sample = os.path.join(os.path.dirname(__file__), "..", "umls_sample.conf")
         entries = read_umls_conf(sample)
-        self.assertIn(["MED-RT;MEDRT", "MEDRT.ttl", "load_on_codes"], entries)
-        self.assertTrue(all(len(e) == 3 for e in entries))
+        self.assertIn(["MED-RT;MEDRT", "MEDRT.ttl", "load_on_codes", False], entries)
 
 
 class ManifestTest(unittest.TestCase):

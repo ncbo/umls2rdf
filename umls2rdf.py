@@ -109,9 +109,6 @@ CONF_DEFAULTS = {
     # List of sources to export. Relative paths are resolved against the
     # working directory, as umls.conf always was.
     "UMLS_CONF": "umls.conf",
-    # Export retired codes as owl:deprecated classes: True for every
-    # load_on_codes source, or a list of SABs.
-    "INCLUDE_RETIRED_CODES": False,
 }
 
 UMLS_CONF_SAMPLE = "umls_sample.conf"
@@ -119,29 +116,40 @@ UMLS_CONF_SAMPLE = "umls_sample.conf"
 def conf_setting(name):
     return getattr(conf, name, CONF_DEFAULTS[name])
 
-def include_retired_codes(sab):
-    setting = conf_setting("INCLUDE_RETIRED_CODES")
-    if isinstance(setting, bool):
-        return setting
-    return sab in setting
-
 def get_umls_conf_path():
     return os.path.expanduser(conf_setting("UMLS_CONF"))
 
+def parse_umls_conf_line(line, where):
+    """Return [SAB, output file, strategy, include_retired] for one umls.conf
+    line. A malformed line raises ValueError naming it."""
+    fields = [field.strip() for field in line.split(",")]
+    if len(fields) not in (3, 4):
+        raise ValueError("%s: expected SAB,file,strategy[,include_retired], got %r"
+                         % (where, line))
+    umls_code, file_out, load_on_field = fields[:3]
+    option = fields[3] if len(fields) == 4 else ""
+    if option not in ("", "include_retired"):
+        raise ValueError("%s: unknown option %r; the only option is include_retired"
+                         % (where, option))
+    include_retired = option == "include_retired"
+    if include_retired and load_on_field == "load_on_cuis":
+        raise ValueError("%s: include_retired needs load_on_codes" % where)
+    return [umls_code, file_out, load_on_field, include_retired]
+
 def read_umls_conf(path):
-    """Return the entries of a umls.conf file as lists of fields, skipping
-    blank lines and lines starting with '#'."""
+    """Return the entries of a umls.conf file (see parse_umls_conf_line),
+    skipping blank lines and lines starting with '#'."""
     if not os.path.isfile(path):
         raise FileNotFoundError(
             "Source list %s not found. Copy %s to umls.conf and edit it, or "
             "set UMLS_CONF in conf.py to the file's path." % (path, UMLS_CONF_SAMPLE))
     entries = []
     with open(path, "r") as fconf:
-        for line in fconf.read().splitlines():
+        for lineno, line in enumerate(fconf.read().splitlines(), 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            entries.append([field.strip() for field in line.split(",")])
+            entries.append(parse_umls_conf_line(line, "%s:%d" % (path, lineno)))
     return entries
 
 def get_language_tag(lat, ont_code):
@@ -984,8 +992,8 @@ def write_manifest(output_dir, ontologies, skipped):
 def ontologies_over_error_limit(results, max_errors):
     return [r for r in results if r["term_errors"] > max_errors]
 
-def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
-                    property_docs, sem_types):
+def export_ontology(con, umls_code, file_out, load_on_field, include_retired,
+                    output_dir, property_docs, sem_types):
     """Write one umls.conf entry. Returns its manifest entry, or None if skipped."""
     alt_uri_code = None
     if ";" in umls_code:
@@ -997,7 +1005,7 @@ def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
     sys.stdout.flush()
     ns = get_umls_url(umls_code if not alt_uri_code else alt_uri_code)
     ont = UmlsOntology(umls_code,ns,con,load_on_cuis=load_on_cuis,
-                       include_retired=include_retired_codes(umls_code))
+                       include_retired=include_retired)
     mrsab = UmlsTable("MRSAB", con)
     ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
     if conf_setting("PROCESS_ONLY_CURRENT_UMLS_VERSION") and not ont.should_process_current_version():
@@ -1032,13 +1040,14 @@ def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types):
     results = []
     skipped = []
     failures = []
-    for (umls_code, file_out, load_on_field) in umls_conf:
+    for (umls_code, file_out, load_on_field, include_retired) in umls_conf:
         if umls_code.startswith("#"):
             continue
         sab = umls_code.split(";")[0]
         try:
             result = export_ontology(con, umls_code, file_out, load_on_field,
-                                     output_dir, property_docs, sem_types)
+                                     include_retired, output_dir, property_docs,
+                                     sem_types)
         except pymysql.err.OperationalError:
             # Lost connection and similar: every later ontology would fail too.
             raise
