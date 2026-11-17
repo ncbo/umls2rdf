@@ -473,8 +473,9 @@ class UmlsClass(object):
 """%(url_term,escape(prefLabel),lang,escape(term_code))
         if self.is_obsolete:
             rdf_term += "\towl:deprecated \"true\"^^xsd:boolean ;\n"
-            # Keep obsolete classes out of MeSH's tree too: its parents and
-            # MN-based roots come from the tree, not from CHD rels.
+            # Obsolete classes take no parents or roots from the tree. Only
+            # MSH has one; the other sources' hierarchy comes from CHD rels,
+            # which build_term already drops for obsolete codes.
             tree = None
 
         seen_triples = set() if self._dedupe_repeated_triples() else None
