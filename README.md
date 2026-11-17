@@ -108,6 +108,29 @@ entry) is logged as <code>ERROR &lt;SAB&gt;: ontology not exported: ...</code>;
 the remaining ontologies are still exported, and the run then exits with
 status 1 the same way.
 
+Each file starts with an <code>owl:Ontology</code> header built from
+<code>MRSAB</code> and <code>MRDOC</code>. BioPortal's metadata extraction
+copies these into the submission:
+
+<table>
+<tr><th>Header property</th><th>Value from</th><th>BioPortal field</th></tr>
+<tr><td><code>owl:versionInfo</code></td><td><code>MRSAB.SVER</code></td><td>version</td></tr>
+<tr><td><code>dcterms:issued</code></td><td>MRDOC <code>umls.release.date</code> (the UMLS release date)</td><td>released</td></tr>
+<tr><td><code>dcterms:language</code></td><td><code>MRSAB.LAT</code>, as a lexvo ISO 639-1 URI</td><td>naturalLanguage</td></tr>
+<tr><td><code>dcterms:license</code></td><td>MRDOC <code>uri</code> for the source's <code>MRSAB.SRL</code></td><td>hasLicense</td></tr>
+<tr><td><code>cc:useGuidelines</code></td><td>a fixed notice plus MRDOC <code>expanded_form</code> for <code>MRSAB.SRL</code></td><td>useGuidelines</td></tr>
+<tr><td><code>dcterms:source</code></td><td><code>MRSAB.IMETA</code></td><td>source</td></tr>
+<tr><td><code>skos:altLabel</code></td><td><code>MRSAB.RSAB</code></td><td>alternative</td></tr>
+<tr><td><code>pav:createdWith</code></td><td>"umls2rdf" plus the <code>git describe</code> name of the checkout, for example <code>umls2rdf v1.3.0</code> at a release tag or <code>umls2rdf v1.2.0-8-g3c22d00</code> after it, with <code>-dirty</code> added when it has uncommitted changes</td><td>usedOntologyEngineeringTool</td></tr>
+</table>
+
+If the release date or the license data is missing, <code>umls2rdf.py</code>
+logs <code>WARNING &lt;SAB&gt;: ...</code> and leaves those lines out; the
+export still succeeds. Run it from a git checkout so the files record which
+version of umls2rdf wrote them. Otherwise it logs
+<code>WARNING umls2rdf: ...</code> and leaves <code>pav:createdWith</code>
+out. It also warns when the checkout has uncommitted changes.
+
 If <code>PROCESS_ONLY_CURRENT_UMLS_VERSION</code> is set to <code>True</code>,
 the exporter only processes ontologies whose <code>MRSAB.IMETA</code> exactly
 matches <code>UMLS_VERSION</code>. Ontologies with a different value are skipped
