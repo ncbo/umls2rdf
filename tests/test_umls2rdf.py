@@ -24,6 +24,7 @@ from umls2rdf import (
     get_rel_code_target,
     get_umls_conf_path,
     ontologies_over_error_limit,
+    parse_umls_conf_line,
     read_umls_conf,
     remove_manifest,
     write_manifest,
@@ -669,10 +670,10 @@ class UmlsTableScanTest(unittest.TestCase):
 
 class ExportOntologiesTest(unittest.TestCase):
     UMLS_CONF = [
-        ["MDRISL", "MDRISL.ttl", "load_on_codes"],
-        ["#OLD", "OLD.ttl", "load_on_codes"],
-        ["ICD10;ICD10ALT", "ICD10.ttl", "load_on_codes"],
-        ["AIR", "AIR.ttl", "load_on_codes"],
+        ["MDRISL", "MDRISL.ttl", "load_on_codes", False],
+        ["#OLD", "OLD.ttl", "load_on_codes", False],
+        ["ICD10;ICD10ALT", "ICD10.ttl", "load_on_codes", True],
+        ["AIR", "AIR.ttl", "load_on_codes", False],
     ]
 
     def export(self, side_effect):
@@ -691,11 +692,103 @@ class ExportOntologiesTest(unittest.TestCase):
         self.assertEqual(skipped, ["AIR"])
         self.assertEqual(failures, ["MDRISL"])
         self.assertIn("ERROR MDRISL: ontology not exported: ValueError", stderr)
+        self.assertEqual([c.args[4] for c in export_one.call_args_list], [False, True, False])
 
     def test_lost_connection_stops_the_run(self):
         error = pymysql.err.OperationalError(2013, "Lost connection")
         with self.assertRaises(pymysql.err.OperationalError):
             self.export([error])
+
+
+class ObsoleteCodesTest(unittest.TestCase):
+    NS = "http://example.org/test/"
+
+    def make_ontology(self):
+        ont = UmlsOntology("TEST", self.NS, con=None, include_obsolete=True)
+        ont.loaded = True
+        ont.lang = "eng"
+        ont.tree = None
+        current = [
+            make_code_atom("C_CUR", "A_CUR", "CUR", "Current label", tty="PT"),
+            make_code_atom("C_PAR", "A_PAR", "PAR", "Parent label", tty="PT"),
+        ]
+        for atom in current:
+            ont.atoms_by_code[atom[13]].append(len(ont.atoms))
+            ont.atoms_by_aui[atom[7]].append(len(ont.atoms))
+            ont.atoms.append(atom)
+        ont.add_obsolete_codes([
+            make_code_atom("C_RET", "A_RET", "RET", "Obsolete label", tty="OP"),
+            make_code_atom("C_RET", "A_RET2", "RET", "Obsolete synonym", tty="OF"),
+            # Obsolete name of a current code: must not be added.
+            make_code_atom("C_CUR", "A_CUR_OLD", "CUR", "Old current label", tty="OP"),
+        ])
+        ont.rels = [
+            make_code_rel("C_RET", "A_RET", "C_CUR", "A_CUR", "SY", "same_as"),
+            make_code_rel("C_RET", "A_RET", "C_PAR", "A_PAR", "CHD"),
+            make_code_rel("C_CUR", "A_CUR", "C_RET", "A_RET", "SY", "same_as"),
+            make_code_rel("C_CUR", "A_CUR", "C_PAR", "A_PAR", "CHD"),
+        ]
+        for index, rel in enumerate(ont.rels):
+            ont.rels_by_aui_src[rel[5]].append(index)
+        ont.sty_by_cui = collections.defaultdict(list)
+        return ont
+
+    def render(self, term, tree=None):
+        with mock.patch.object(conf, "DEDUPE_CLASS_TRIPLES", True, create=True):
+            return term.toRDF(tree=tree)
+
+    def test_only_codes_without_current_names_are_obsolete(self):
+        ont = self.make_ontology()
+        self.assertEqual(ont.obsolete_codes, {"RET"})
+        self.assertEqual(len(ont.atoms_by_code["RET"]), 2)
+        self.assertEqual(len(ont.atoms_by_code["CUR"]), 1)
+
+    def test_obsolete_class_is_deprecated_outside_the_tree_with_history_links(self):
+        ont = self.make_ontology()
+        rdf = self.render(ont.build_term("RET"))
+
+        self.assertIn('\towl:deprecated "true"^^xsd:boolean ;', rdf)
+        self.assertIn('skos:prefLabel """Obsolete label"""@en', rdf)
+        self.assertIn("\t<%ssame_as> <%sCUR> ;" % (self.NS, self.NS), rdf)
+        self.assertNotIn("rdfs:subClassOf", rdf)
+
+    def test_current_class_is_unchanged_by_obsolete_codes(self):
+        with_obsolete = self.make_ontology()
+        without = self.make_ontology()
+        without.obsolete_codes = set()
+        del without.atoms_by_code["RET"]
+        for aui in ("A_RET", "A_RET2"):
+            del without.atoms_by_aui[aui]
+
+        rdf = self.render(with_obsolete.build_term("CUR"))
+        self.assertEqual(rdf, self.render(without.build_term("CUR")))
+        self.assertNotIn("RET", rdf)
+        self.assertNotIn("owl:deprecated", rdf)
+        self.assertIn("rdfs:subClassOf <%sPAR>" % self.NS, rdf)
+
+    def test_obsolete_mesh_descriptor_stays_out_of_the_mesh_tree(self):
+        # MeSH parents come from the tree and its roots from MN tree numbers,
+        # not from CHD rels, so build_term's CHD/PAR filter does not cover them.
+        tree = {"D000002": {"D000001"}}
+
+        def mesh_class(is_obsolete):
+            return UmlsClass(
+                self.NS, atoms=[make_code_atom("C1", "A1", "D000002", "Heading", tty="PT")],
+                rels=[], defs=[], atts=[make_code_att("D000002", "MN", "C04")],
+                rank=[], rank_by_tty=collections.defaultdict(list), sty=[],
+                sty_by_cui=collections.defaultdict(list), is_obsolete=is_obsolete)
+
+        current = self.render(mesh_class(False), tree)
+        self.assertIn("rdfs:subClassOf <%sD000001>" % self.NS, current)
+        self.assertIn("rdfs:subClassOf owl:Thing", current)
+
+        obsolete = self.render(mesh_class(True), tree)
+        self.assertIn("owl:deprecated", obsolete)
+        self.assertNotIn("rdfs:subClassOf", obsolete)
+
+    def test_load_on_cuis_ignores_the_setting(self):
+        ont = UmlsOntology("TEST", self.NS, con=None, load_on_cuis=True, include_obsolete=True)
+        self.assertFalse(ont.include_obsolete)
 
 
 class UmlsConfTest(unittest.TestCase):
@@ -708,9 +801,33 @@ class UmlsConfTest(unittest.TestCase):
                             "\n   \n"
                             "MSH;MESH, MESH.ttl ,load_on_codes \n")
             self.assertEqual(read_umls_conf(path), [
-                ["AIR", "AI-RHEUM.ttl", "load_on_codes"],
-                ["MSH;MESH", "MESH.ttl", "load_on_codes"],
+                ["AIR", "AI-RHEUM.ttl", "load_on_codes", False],
+                ["MSH;MESH", "MESH.ttl", "load_on_codes", False],
             ])
+
+    def test_include_obsolete_option(self):
+        self.assertEqual(
+            parse_umls_conf_line("SNOMEDCT_US;SNOMEDCT,SNOMEDCT.ttl,load_on_codes, include_obsolete", "x"),
+            ["SNOMEDCT_US;SNOMEDCT", "SNOMEDCT.ttl", "load_on_codes", True])
+        self.assertEqual(parse_umls_conf_line("AIR,AIR.ttl,load_on_codes,", "x"),
+                         ["AIR", "AIR.ttl", "load_on_codes", False])
+
+    def test_malformed_lines_fail_naming_the_line(self):
+        for line, message in (
+                ("AIR,AIR.ttl", "expected SAB,file,strategy"),
+                ("AIR,AIR.ttl,load_on_codes,include_obsolete,extra", "expected SAB,file,strategy"),
+                ("AIR,AIR.ttl,load_on_codes,include_retired", "unknown option 'include_retired'"),
+                ("HL7,HL7.ttl,load_on_cuis,include_obsolete", "include_obsolete needs load_on_codes")):
+            with self.assertRaisesRegex(ValueError, "umls.conf:2: " + message):
+                parse_umls_conf_line(line, "umls.conf:2")
+
+    def test_reader_reports_file_and_line_number(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "umls.conf")
+            with open(path, "w") as fconf:
+                fconf.write("# comment\nAIR,AIR.ttl,load_on_codes\nHL7,HL7.ttl\n")
+            with self.assertRaisesRegex(ValueError, "umls.conf:3: "):
+                read_umls_conf(path)
 
     def test_missing_file_points_at_sample_and_setting(self):
         with self.assertRaisesRegex(FileNotFoundError, "umls_sample.conf.*UMLS_CONF"):
@@ -725,8 +842,7 @@ class UmlsConfTest(unittest.TestCase):
     def test_sample_conf_parses(self):
         sample = os.path.join(os.path.dirname(__file__), "..", "umls_sample.conf")
         entries = read_umls_conf(sample)
-        self.assertIn(["MED-RT;MEDRT", "MEDRT.ttl", "load_on_codes"], entries)
-        self.assertTrue(all(len(e) == 3 for e in entries))
+        self.assertIn(["MED-RT;MEDRT", "MEDRT.ttl", "load_on_codes", False], entries)
 
 
 class ManifestTest(unittest.TestCase):
