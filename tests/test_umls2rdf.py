@@ -18,6 +18,7 @@ from umls2rdf import (
     UmlsTable,
     export_ontologies,
     get_language_tag,
+    get_umls_release_docs,
     get_rel_code_source,
     get_rel_code_target,
     get_umls_conf_path,
@@ -380,13 +381,16 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         ont.mrsab_record[3] = "TEST-RSAB"
         ont.mrsab_record[6] = "2025-test-version"
         ont.mrsab_record[9] = "2025AB"
+        ont.mrsab_record[13] = 3
         ont.mrsab_record[23] = "Test Ontology Title"
+        ont.umls_docs = UMLS_DOCS
 
         writes = []
         fout = mock.Mock()
         fout.write.side_effect = writes.append
 
-        with mock.patch("umls2rdf.codecs.open", return_value=fout):
+        with mock.patch("umls2rdf.codecs.open", return_value=fout), \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
             returned = ont.write_into("ignored.ttl")
 
         self.assertIs(returned, fout)
@@ -396,7 +400,84 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         self.assertIn('rdfs:label "Test Ontology Title"@en ;', written)
         self.assertIn('owl:versionInfo "2025-test-version" ;', written)
         self.assertIn('dcterms:source "UMLS 2025AB"', written)
-        self.assertIn('skos:altLabel "TEST-RSAB"@en .', written)
+        self.assertIn('skos:altLabel "TEST-RSAB"@en ;', written)
+        self.assertIn('dcterms:issued "2025-11-03"^^xsd:date ;', written)
+        self.assertIn('dcterms:language <http://lexvo.org/id/iso639-1/en> ;', written)
+        self.assertIn('dcterms:license <https://example.org/license#category3> ;', written)
+        self.assertIn(
+            'cc:useGuidelines "Use of this content requires a UMLS Metathesaurus License '
+            'from the U.S. National Library of Medicine (https://uts.nlm.nih.gov/). '
+            'UMLS source restriction level 3: General terms + additional restrictions '
+            'in category 12.3. See https://example.org/license#category3 for the terms '
+            'of this level."@en .', written)
+        self.assertEqual(stderr.getvalue(), "")
+
+
+UMLS_DOCS = get_umls_release_docs([
+    ("RELEASE", "umls.release.date", "release_info", "20251103"),
+    ("RELEASE", "umls.release.name", "release_info", "2025AB"),
+    ("SRL", "0", "expanded_form", "No additional restrictions; general terms of the license agreement apply."),
+    ("SRL", "0", "uri", "https://example.org/license"),
+    ("SRL", "3", "expanded_form", "General terms + additional restrictions in category 12.3"),
+    ("SRL", "3", "uri", "https://example.org/license#category3"),
+    ("REL", "PAR", "expanded_form", "has parent relationship in a Metathesaurus source vocabulary"),
+])
+
+
+class OntologyHeaderMetadataTest(unittest.TestCase):
+    def make_ontology(self, srl=3, umls_docs=UMLS_DOCS, lang="eng"):
+        ont = UmlsOntology("TEST", "http://example.org/test", con=None, load_on_cuis=False)
+        ont.mrsab_record = [""] * 24
+        ont.mrsab_record[13] = srl
+        ont.umls_docs = umls_docs
+        return ont
+
+    def optional_lines(self, ont, lang_tag="en"):
+        with mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
+            lines = ont.ontology_optional_lines(lang_tag)
+        return lines, stderr.getvalue()
+
+    def test_reads_release_date_and_restriction_levels_from_mrdoc(self):
+        self.assertEqual(UMLS_DOCS["release_date"], "20251103")
+        self.assertEqual(sorted(UMLS_DOCS["srl"]), ["0", "3"])
+        self.assertEqual(UMLS_DOCS["srl"]["3"]["uri"], "https://example.org/license#category3")
+
+    def test_level_zero_is_a_license_level_not_a_missing_value(self):
+        lines, warnings = self.optional_lines(self.make_ontology(srl=0))
+        self.assertIn("dcterms:license <https://example.org/license>", lines)
+        self.assertIn("UMLS source restriction level 0: No additional restrictions; "
+                      "general terms of the license agreement apply. See", lines)
+        self.assertEqual(warnings, "")
+
+    def test_missing_mrdoc_rows_warn_and_leave_lines_out(self):
+        lines, warnings = self.optional_lines(self.make_ontology(umls_docs=None))
+        self.assertNotIn("dcterms:issued", lines)
+        self.assertNotIn("dcterms:license", lines)
+        self.assertNotIn("cc:useGuidelines", lines)
+        self.assertIn("dcterms:language <http://lexvo.org/id/iso639-1/en>", lines)
+        self.assertIn("WARNING TEST: no UMLS release date in MRDOC", warnings)
+        self.assertIn("WARNING TEST: no MRDOC uri and expanded_form for SRL 3", warnings)
+
+    def test_missing_srl_warns_and_leaves_license_out(self):
+        lines, warnings = self.optional_lines(self.make_ontology(srl=None))
+        self.assertNotIn("dcterms:license", lines)
+        self.assertIn("dcterms:issued", lines)
+        self.assertIn("WARNING TEST: no SRL in MRSAB", warnings)
+
+    def test_unknown_srl_level_warns_and_leaves_license_out(self):
+        lines, warnings = self.optional_lines(self.make_ontology(srl=7))
+        self.assertNotIn("dcterms:license", lines)
+        self.assertIn("no MRDOC uri and expanded_form for SRL 7", warnings)
+
+    def test_malformed_release_date_warns_and_leaves_issued_out(self):
+        docs = dict(UMLS_DOCS, release_date="2025-11")
+        lines, warnings = self.optional_lines(self.make_ontology(umls_docs=docs))
+        self.assertNotIn("dcterms:issued", lines)
+        self.assertIn("MRDOC UMLS release date '2025-11' is not YYYYMMDD", warnings)
+
+    def test_language_uses_primary_subtag(self):
+        lines, _ = self.optional_lines(self.make_ontology(), lang_tag="pt-BR")
+        self.assertIn("dcterms:language <http://lexvo.org/id/iso639-1/pt>", lines)
 
 
 class UmlsLanguageCodeMapTest(unittest.TestCase):
