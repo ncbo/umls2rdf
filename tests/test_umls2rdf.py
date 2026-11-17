@@ -18,6 +18,7 @@ from umls2rdf import (
     UmlsTable,
     export_ontologies,
     get_language_tag,
+    get_umls2rdf_uri,
     get_umls_release_docs,
     get_rel_code_source,
     get_rel_code_target,
@@ -384,6 +385,7 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         ont.mrsab_record[13] = 3
         ont.mrsab_record[23] = "Test Ontology Title"
         ont.umls_docs = UMLS_DOCS
+        ont.tool_uri = "https://github.com/ncbo/umls2rdf/releases/tag/v9.9.9"
 
         writes = []
         fout = mock.Mock()
@@ -396,7 +398,7 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         self.assertIs(returned, fout)
         written = "".join(writes)
         self.assertIn("<http://example.org/test>", written)
-        self.assertIn('rdfs:comment "RDF Version of the UMLS ontology TEST; converted with the UMLS2RDF tool (https://github.com/ncbo/umls2rdf), developed by the NCBO project."@en ;', written)
+        self.assertNotIn("rdfs:comment", written)
         self.assertIn('rdfs:label "Test Ontology Title"@en ;', written)
         self.assertIn('owl:versionInfo "2025-test-version" ;', written)
         self.assertIn('dcterms:source "UMLS 2025AB"', written)
@@ -409,7 +411,9 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
             'from the U.S. National Library of Medicine (https://uts.nlm.nih.gov/). '
             'UMLS source restriction level 3: General terms + additional restrictions '
             'in category 12.3. See https://example.org/license#category3 for the terms '
-            'of this level."@en .', written)
+            'of this level."@en ;', written)
+        self.assertIn(
+            "pav:createdWith <https://github.com/ncbo/umls2rdf/releases/tag/v9.9.9> .", written)
         self.assertEqual(stderr.getvalue(), "")
 
 
@@ -475,9 +479,46 @@ class OntologyHeaderMetadataTest(unittest.TestCase):
         self.assertNotIn("dcterms:issued", lines)
         self.assertIn("MRDOC UMLS release date '2025-11' is not YYYYMMDD", warnings)
 
+    def test_no_tool_uri_leaves_created_with_out(self):
+        lines, warnings = self.optional_lines(self.make_ontology())
+        self.assertNotIn("pav:createdWith", lines)
+        self.assertEqual(warnings, "")
+
     def test_language_uses_primary_subtag(self):
         lines, _ = self.optional_lines(self.make_ontology(), lang_tag="pt-BR")
         self.assertIn("dcterms:language <http://lexvo.org/id/iso639-1/pt>", lines)
+
+
+class Umls2rdfUriTest(unittest.TestCase):
+    COMMIT = "bc3f2b3" + "0" * 33
+
+    def uri(self, git_outputs):
+        def fake_git(*args):
+            return git_outputs.get(args[0])
+        with mock.patch("umls2rdf.run_git", side_effect=fake_git), \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
+            uri = get_umls2rdf_uri()
+        return uri, stderr.getvalue()
+
+    def test_release_tag_links_to_the_release(self):
+        uri, warnings = self.uri({"rev-parse": self.COMMIT, "status": "", "describe": "v1.3.0"})
+        self.assertEqual(uri, "https://github.com/ncbo/umls2rdf/releases/tag/v1.3.0")
+        self.assertEqual(warnings, "")
+
+    def test_untagged_commit_links_to_the_commit(self):
+        uri, warnings = self.uri({"rev-parse": self.COMMIT, "status": "", "describe": None})
+        self.assertEqual(uri, "https://github.com/ncbo/umls2rdf/tree/" + self.COMMIT)
+        self.assertEqual(warnings, "")
+
+    def test_uncommitted_changes_warn(self):
+        uri, warnings = self.uri({"rev-parse": self.COMMIT, "status": " M umls2rdf.py", "describe": None})
+        self.assertEqual(uri, "https://github.com/ncbo/umls2rdf/tree/" + self.COMMIT)
+        self.assertIn("WARNING umls2rdf: this checkout has uncommitted changes", warnings)
+
+    def test_no_git_checkout_warns_and_returns_none(self):
+        uri, warnings = self.uri({})
+        self.assertIsNone(uri)
+        self.assertIn("WARNING umls2rdf: cannot read the git commit", warnings)
 
 
 class UmlsLanguageCodeMapTest(unittest.TestCase):

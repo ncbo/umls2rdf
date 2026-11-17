@@ -7,6 +7,7 @@ import datetime
 import json
 import sys
 import os
+import subprocess
 import traceback
 import urllib.request, urllib.parse, urllib.error
 from string import Template
@@ -30,12 +31,12 @@ PREFIXES = """
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix umls: <http://bioportal.bioontology.org/ontologies/umls/> .
 @prefix cc: <http://creativecommons.org/ns#> .
+@prefix pav: <http://purl.org/pav/> .
 """
 
 ONTOLOGY_HEADER = Template("""
 <$uri>
     a owl:Ontology ;
-    rdfs:comment $comment ;
     rdfs:label $label ;
     owl:imports <http://www.w3.org/2004/02/skos/core> ;
     owl:versionInfo $versioninfo ;
@@ -102,6 +103,9 @@ UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cs", "fin" : "fi", "ge
 # step is complete.
 MANIFEST_FILENAME = "umls2rdf_manifest.json"
 
+# pav:createdWith points at the umls2rdf code that wrote the file.
+UMLS2RDF_REPO_URL = "https://github.com/ncbo/umls2rdf"
+
 # dcterms:language values. BioPortal reads them into naturalLanguage.
 LEXVO_ISO639_1 = "http://lexvo.org/id/iso639-1/"
 
@@ -159,6 +163,35 @@ def get_language_tag(lat, ont_code):
 def warn(ont_code, message):
     sys.stderr.write("WARNING %s: %s\n" % (ont_code, message))
     sys.stderr.flush()
+
+def run_git(*args):
+    """Output of a git command run in this script's checkout, or None."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", os.path.dirname(os.path.abspath(__file__))] + list(args),
+            capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+def get_umls2rdf_uri():
+    """URL of the umls2rdf code running now, for pav:createdWith: the release
+    page when HEAD is a release tag, otherwise the commit. None (with a
+    warning) when this is not a git checkout."""
+    commit = run_git("rev-parse", "HEAD")
+    if not commit:
+        warn("umls2rdf", "cannot read the git commit of this checkout; "
+             "leaving pav:createdWith out of the headers")
+        return None
+    if run_git("status", "--porcelain", "--untracked-files=no"):
+        warn("umls2rdf", "this checkout has uncommitted changes; "
+             "pav:createdWith names commit %s, which does not include them" % commit)
+    tag = run_git("describe", "--tags", "--exact-match", "HEAD")
+    if tag:
+        return "%s/releases/tag/%s" % (UMLS2RDF_REPO_URL, tag)
+    return "%s/tree/%s" % (UMLS2RDF_REPO_URL, commit)
 
 def get_umls_release_docs(mrdoc_records):
     """Collect the MRDOC rows the ontology header uses: the UMLS release date
@@ -644,6 +677,8 @@ class UmlsOntology(object):
         # Output of get_umls_release_docs(); None leaves the release date and
         # license out of the header.
         self.umls_docs = None
+        # Output of get_umls2rdf_uri(); None leaves pav:createdWith out.
+        self.tool_uri = None
 
     def mrsab_value(self, idx, default=None):
         if self.mrsab_record and self.mrsab_record[idx]:
@@ -716,6 +751,8 @@ class UmlsOntology(object):
             license_uri, use_guidelines = license_info
             lines.append("dcterms:license <%s>" % license_uri)
             lines.append("cc:useGuidelines %s" % turtle_string(use_guidelines, lang="en"))
+        if self.tool_uri:
+            lines.append("pav:createdWith <%s>" % self.tool_uri)
         return "".join(" ;\n    %s" % line for line in lines)
 
     def should_process_current_version(self):
@@ -896,13 +933,8 @@ class UmlsOntology(object):
         fout = codecs.open(file_path,"w","utf-8")
         #nterms = len(self.atoms_by_code)
         fout.write(PREFIXES)
-        comment = "RDF Version of the UMLS ontology %s; " +\
-                  "converted with the UMLS2RDF tool " +\
-                  "(https://github.com/ncbo/umls2rdf), "+\
-                  "developed by the NCBO project."
         fout.write(ONTOLOGY_HEADER.substitute(dict(
             uri=self.ns,
-            comment=turtle_string(comment % self.ont_code, lang="en"),
             label=turtle_string(self.ontology_label(), lang="en"),
             versioninfo=turtle_string(self.ontology_version()),
             source=turtle_string(self.ontology_source()),
@@ -1015,7 +1047,7 @@ def ontologies_over_error_limit(results, max_errors):
     return [r for r in results if r["term_errors"] > max_errors]
 
 def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
-                    property_docs, sem_types, umls_docs=None):
+                    property_docs, sem_types, umls_docs=None, tool_uri=None):
     """Write one umls.conf entry. Returns its manifest entry, or None if skipped."""
     alt_uri_code = None
     if ";" in umls_code:
@@ -1030,6 +1062,7 @@ def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
     mrsab = UmlsTable("MRSAB", con)
     ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
     ont.umls_docs = umls_docs
+    ont.tool_uri = tool_uri
     if conf_setting("PROCESS_ONLY_CURRENT_UMLS_VERSION") and not ont.should_process_current_version():
         sys.stdout.write("Skipping %s: IMETA=%s, expected %s\n\n" % (
             umls_code,
@@ -1055,7 +1088,7 @@ def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
     }
 
 def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types,
-                      umls_docs=None):
+                      umls_docs=None, tool_uri=None):
     """Export every umls.conf entry. One ontology failing (for example a LAT
     with no UMLS_LANGCODE_MAP entry) is logged and the rest still run.
     Returns (results, skipped SABs, failed SABs)."""
@@ -1069,7 +1102,7 @@ def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types,
         try:
             result = export_ontology(con, umls_code, file_out, load_on_field,
                                      output_dir, property_docs, sem_types,
-                                     umls_docs=umls_docs)
+                                     umls_docs=umls_docs, tool_uri=tool_uri)
         except pymysql.err.OperationalError:
             # Lost connection and similar: every later ontology would fail too.
             raise
@@ -1128,7 +1161,8 @@ if __name__ == "__main__":
         property_docs[_key][_type] = _expl
 
     results, skipped, ontology_failures = export_ontologies(
-        con, umls_conf, output_dir, property_docs, sem_types, umls_docs)
+        con, umls_conf, output_dir, property_docs, sem_types, umls_docs,
+        get_umls2rdf_uri())
     sys.stdout.flush()
 
     max_errors = conf_setting("MAX_TERM_ERRORS")
