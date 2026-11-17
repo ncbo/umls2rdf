@@ -12,6 +12,7 @@ import pymysql.cursors
 import conf
 from umls2rdf import (
     MANIFEST_FILENAME,
+    UMLS_LANGCODE_MAP,
     UmlsClass,
     UmlsOntology,
     UmlsTable,
@@ -344,7 +345,7 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
     def test_terms_rewrite_code_mode_relations_and_filter_self_maps(self):
         ont = UmlsOntology("TEST", "http://example.org/test", con=None, load_on_cuis=False)
         ont.loaded = True
-        ont.lang = "eng"
+        ont.lang = "spa"
         ont.atoms = [
             make_code_atom("CUI_SOURCE", "AUI_SOURCE", "CODE1", "Source preferred", tty="PT"),
             make_code_atom("CUI_TARGET", "AUI_TARGET", "CODE2", "Target preferred", tty="PT"),
@@ -391,10 +392,19 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         self.assertIs(returned, fout)
         written = "".join(writes)
         self.assertIn("<http://example.org/test>", written)
-        self.assertIn('rdfs:label "Test Ontology Title" ;', written)
+        self.assertIn('rdfs:comment "RDF Version of the UMLS ontology TEST; converted with the UMLS2RDF tool (https://github.com/ncbo/umls2rdf), developed by the NCBO project."@en ;', written)
+        self.assertIn('rdfs:label "Test Ontology Title"@en ;', written)
         self.assertIn('owl:versionInfo "2025-test-version" ;', written)
         self.assertIn('dcterms:source "UMLS 2025AB"', written)
-        self.assertIn('skos:altLabel "TEST-RSAB" .', written)
+        self.assertIn('skos:altLabel "TEST-RSAB"@en .', written)
+
+
+class UmlsLanguageCodeMapTest(unittest.TestCase):
+    def test_uses_valid_bcp47_language_codes_for_known_problem_cases(self):
+        self.assertEqual(UMLS_LANGCODE_MAP["cze"], "cs")
+        self.assertEqual(UMLS_LANGCODE_MAP["jpn"], "ja")
+        self.assertEqual(UMLS_LANGCODE_MAP["kor"], "ko")
+        self.assertEqual(UMLS_LANGCODE_MAP["swe"], "sv")
 
     def make_code_ontology(self, atoms_by_code):
         ont = UmlsOntology("TEST", "http://example.org/test", con=None, load_on_cuis=False)

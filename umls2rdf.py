@@ -92,7 +92,7 @@ MRSAB_IMETA = 9
 MRSAB_CURVER = 21
 MRSAB_SSN = 23
 
-UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cz", "fin" : "fi", "ger" : "de", "ita" : "it", "jpn" : "jp", "pol" : "pl", "por" : "pt", "rus" : "ru", "spa" : "es", "swe" : "sw", "scr" : "hr", "dut" : "nl", "lav" : "lv", "hun" : "hu", "kor" : "kr", "dan" : "da", "nor" : "no", "heb" : "he", "baq" : "eu"}
+UMLS_LANGCODE_MAP = {"eng" : "en", "fre" : "fr", "cze" : "cs", "fin" : "fi", "ger" : "de", "ita" : "it", "jpn" : "ja", "pol" : "pl", "por" : "pt", "rus" : "ru", "spa" : "es", "swe" : "sv", "scr" : "hr", "dut" : "nl", "lav" : "lv", "hun" : "hu", "kor" : "ko", "dan" : "da", "nor" : "no", "heb" : "he", "baq" : "eu"}
 
 # Written to OUTPUT_FOLDER only after a run finishes within the allowed number
 # of term errors; run_umls_pipeline.py uses it to decide whether the export
@@ -813,11 +813,11 @@ class UmlsOntology(object):
                   "developed by the NCBO project."
         fout.write(ONTOLOGY_HEADER.substitute(dict(
             uri=self.ns,
-            comment=turtle_string(comment % self.ont_code),
-            label=turtle_string(self.ontology_label()),
+            comment=turtle_string(comment % self.ont_code, lang="en"),
+            label=turtle_string(self.ontology_label(), lang="en"),
             versioninfo=turtle_string(self.ontology_version()),
             source=turtle_string(self.ontology_source()),
-            alt_label_line=(' ;\n    skos:altLabel %s' % turtle_string(self.ontology_alt_label())) if self.ontology_alt_label() else ""
+            alt_label_line=(' ;\n    skos:altLabel %s' % turtle_string(self.ontology_alt_label(), lang="en")) if self.ontology_alt_label() else ""
         )))
         duplicate_counts = self._empty_duplicate_counts()
         self.terms_written = 0
