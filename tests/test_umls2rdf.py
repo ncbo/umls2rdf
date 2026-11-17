@@ -491,12 +491,12 @@ class OntologyHeaderMetadataTest(unittest.TestCase):
 
 class Umls2rdfToolTest(unittest.TestCase):
     def tool(self, describe):
-        """get_umls2rdf_tool() with `git describe --tags --always --dirty`
+        """get_umls2rdf_tool() with `git describe --tags --always`
         returning `describe` (None: not a git checkout)."""
         with mock.patch("umls2rdf.run_git", return_value=describe) as run_git, \
                 mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
             tool = get_umls2rdf_tool()
-        run_git.assert_called_once_with("describe", "--tags", "--always", "--dirty")
+        run_git.assert_called_once_with("describe", "--tags", "--always")
         return tool, stderr.getvalue()
 
     def test_release_tag_gives_the_release_name(self):
@@ -508,11 +508,6 @@ class Umls2rdfToolTest(unittest.TestCase):
         tool, warnings = self.tool("v1.2.0-8-g3c22d00")
         self.assertEqual(tool, "umls2rdf v1.2.0-8-g3c22d00")
         self.assertEqual(warnings, "")
-
-    def test_uncommitted_changes_at_a_release_tag_are_marked_and_warn(self):
-        tool, warnings = self.tool("v1.3.0-dirty")
-        self.assertEqual(tool, "umls2rdf v1.3.0-dirty")
-        self.assertIn("WARNING umls2rdf: this checkout has uncommitted changes", warnings)
 
     def test_no_git_checkout_warns_and_returns_none(self):
         tool, warnings = self.tool(None)

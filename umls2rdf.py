@@ -194,19 +194,16 @@ def run_git(*args):
 def get_umls2rdf_tool():
     """Name and version of the umls2rdf code running now, for
     pav:createdWith: "umls2rdf " plus its git describe name, such as
-    "umls2rdf v1.3.0" at a release tag, "umls2rdf v1.2.0-8-g3c22d00" after
-    it, and a "-dirty" suffix when the checkout has uncommitted changes.
+    "umls2rdf v1.3.0" at a release tag or "umls2rdf v1.2.0-8-g3c22d00" after
+    it. Uncommitted changes in the checkout are not marked.
     BioPortal stores this string as the submission's
     usedOntologyEngineeringTool. None (with a warning) when this is not a
     git checkout."""
-    name = run_git("describe", "--tags", "--always", "--dirty")
+    name = run_git("describe", "--tags", "--always")
     if not name:
         warn("umls2rdf", "cannot read the git version of this checkout; "
              "leaving pav:createdWith out of the headers")
         return None
-    if name.endswith("-dirty"):
-        warn("umls2rdf", "this checkout has uncommitted changes; "
-             "pav:createdWith says umls2rdf %s" % name)
     return "umls2rdf %s" % name
 
 def get_umls_release_docs(mrdoc_records):

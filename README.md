@@ -131,7 +131,7 @@ copies these into the submission:
 <tr><td><code>cc:useGuidelines</code></td><td>a fixed notice plus MRDOC <code>expanded_form</code> for <code>MRSAB.SRL</code></td><td>useGuidelines</td></tr>
 <tr><td><code>dcterms:source</code></td><td><code>MRSAB.IMETA</code></td><td>source</td></tr>
 <tr><td><code>skos:altLabel</code></td><td><code>MRSAB.RSAB</code></td><td>alternative</td></tr>
-<tr><td><code>pav:createdWith</code></td><td>"umls2rdf" plus the <code>git describe</code> name of the checkout, for example <code>umls2rdf v1.3.0</code> at a release tag or <code>umls2rdf v1.2.0-8-g3c22d00</code> after it, with <code>-dirty</code> added when it has uncommitted changes</td><td>usedOntologyEngineeringTool</td></tr>
+<tr><td><code>pav:createdWith</code></td><td>"umls2rdf" plus the <code>git describe</code> name of the checkout, for example <code>umls2rdf v1.3.0</code> at a release tag or <code>umls2rdf v1.2.0-8-g3c22d00</code> after it</td><td>usedOntologyEngineeringTool</td></tr>
 </table>
 
 If the release date or the license data is missing, <code>umls2rdf.py</code>
