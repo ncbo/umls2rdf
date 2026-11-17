@@ -18,7 +18,7 @@ from umls2rdf import (
     UmlsTable,
     export_ontologies,
     get_language_tag,
-    get_umls2rdf_uri,
+    get_umls2rdf_tool,
     get_umls_release_docs,
     get_rel_code_source,
     get_rel_code_target,
@@ -385,7 +385,7 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         ont.mrsab_record[13] = 3
         ont.mrsab_record[23] = "Test Ontology Title"
         ont.umls_docs = UMLS_DOCS
-        ont.tool_uri = "https://github.com/ncbo/umls2rdf/releases/tag/v9.9.9"
+        ont.tool = ("https://github.com/ncbo/umls2rdf/releases/tag/v9.9.9", "umls2rdf v9.9.9")
 
         writes = []
         fout = mock.Mock()
@@ -413,7 +413,8 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
             'in category 12.3. See https://example.org/license#category3 for the terms '
             'of this level."@en ;', written)
         self.assertIn(
-            "pav:createdWith <https://github.com/ncbo/umls2rdf/releases/tag/v9.9.9> .", written)
+            "pav:createdWith <https://github.com/ncbo/umls2rdf/releases/tag/v9.9.9> .\n\n"
+            '<https://github.com/ncbo/umls2rdf/releases/tag/v9.9.9> rdfs:label "umls2rdf v9.9.9" .\n', written)
         self.assertEqual(stderr.getvalue(), "")
 
 
@@ -479,9 +480,11 @@ class OntologyHeaderMetadataTest(unittest.TestCase):
         self.assertNotIn("dcterms:issued", lines)
         self.assertIn("MRDOC UMLS release date '2025-11' is not YYYYMMDD", warnings)
 
-    def test_no_tool_uri_leaves_created_with_out(self):
-        lines, warnings = self.optional_lines(self.make_ontology())
+    def test_no_tool_leaves_created_with_and_its_label_out(self):
+        ont = self.make_ontology()
+        lines, warnings = self.optional_lines(ont)
         self.assertNotIn("pav:createdWith", lines)
+        self.assertEqual(ont.ontology_tool_label(), "")
         self.assertEqual(warnings, "")
 
     def test_language_uses_primary_subtag(self):
@@ -489,35 +492,44 @@ class OntologyHeaderMetadataTest(unittest.TestCase):
         self.assertIn("dcterms:language <http://lexvo.org/id/iso639-1/pt>", lines)
 
 
-class Umls2rdfUriTest(unittest.TestCase):
-    COMMIT = "bc3f2b3" + "0" * 33
-
-    def uri(self, git_outputs):
+class Umls2rdfToolTest(unittest.TestCase):
+    def tool(self, git_outputs):
         def fake_git(*args):
             return git_outputs.get(args[0])
         with mock.patch("umls2rdf.run_git", side_effect=fake_git), \
                 mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
-            uri = get_umls2rdf_uri()
-        return uri, stderr.getvalue()
+            tool = get_umls2rdf_tool()
+        return tool, stderr.getvalue()
 
     def test_release_tag_links_to_the_release(self):
-        uri, warnings = self.uri({"rev-parse": self.COMMIT, "status": "", "describe": "v1.3.0"})
-        self.assertEqual(uri, "https://github.com/ncbo/umls2rdf/releases/tag/v1.3.0")
+        tool, warnings = self.tool({"rev-parse": "3c22d00", "status": "", "describe": "v1.3.0"})
+        self.assertEqual(tool, ("https://github.com/ncbo/umls2rdf/releases/tag/v1.3.0",
+                                "umls2rdf v1.3.0"))
         self.assertEqual(warnings, "")
 
-    def test_untagged_commit_links_to_the_commit(self):
-        uri, warnings = self.uri({"rev-parse": self.COMMIT, "status": "", "describe": None})
-        self.assertEqual(uri, "https://github.com/ncbo/umls2rdf/tree/" + self.COMMIT)
-        self.assertEqual(warnings, "")
+    def test_untagged_commit_links_to_the_short_hash(self):
+        def fake_git(*args):
+            if args[0] == "rev-parse":
+                return "3c22d00"
+            if args[0] == "status":
+                return ""
+            if "--exact-match" in args:
+                return None
+            return "v1.2.0-8-g3c22d00"
+        with mock.patch("umls2rdf.run_git", side_effect=fake_git):
+            tool = get_umls2rdf_tool()
+        self.assertEqual(tool, ("https://github.com/ncbo/umls2rdf/tree/3c22d00",
+                                "umls2rdf v1.2.0-8-g3c22d00"))
 
     def test_uncommitted_changes_warn(self):
-        uri, warnings = self.uri({"rev-parse": self.COMMIT, "status": " M umls2rdf.py", "describe": None})
-        self.assertEqual(uri, "https://github.com/ncbo/umls2rdf/tree/" + self.COMMIT)
+        tool, warnings = self.tool({"rev-parse": "3c22d00", "status": " M umls2rdf.py"})
+        self.assertEqual(tool, ("https://github.com/ncbo/umls2rdf/tree/3c22d00",
+                                "umls2rdf 3c22d00"))
         self.assertIn("WARNING umls2rdf: this checkout has uncommitted changes", warnings)
 
     def test_no_git_checkout_warns_and_returns_none(self):
-        uri, warnings = self.uri({})
-        self.assertIsNone(uri)
+        tool, warnings = self.tool({})
+        self.assertIsNone(tool)
         self.assertIn("WARNING umls2rdf: cannot read the git commit", warnings)
 
 

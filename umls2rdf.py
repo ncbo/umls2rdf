@@ -176,11 +176,13 @@ def run_git(*args):
         return None
     return result.stdout.strip()
 
-def get_umls2rdf_uri():
-    """URL of the umls2rdf code running now, for pav:createdWith: the release
-    page when HEAD is a release tag, otherwise the commit. None (with a
-    warning) when this is not a git checkout."""
-    commit = run_git("rev-parse", "HEAD")
+def get_umls2rdf_tool():
+    """(URL, label) of the umls2rdf code running now, for pav:createdWith.
+    At a release tag: the release page and "umls2rdf v1.3.0". Otherwise the
+    commit (short hash) and the git describe name, such as
+    "umls2rdf v1.2.0-8-g3c22d00". None (with a warning) when this is not a
+    git checkout."""
+    commit = run_git("rev-parse", "--short", "HEAD")
     if not commit:
         warn("umls2rdf", "cannot read the git commit of this checkout; "
              "leaving pav:createdWith out of the headers")
@@ -190,8 +192,9 @@ def get_umls2rdf_uri():
              "pav:createdWith names commit %s, which does not include them" % commit)
     tag = run_git("describe", "--tags", "--exact-match", "HEAD")
     if tag:
-        return "%s/releases/tag/%s" % (UMLS2RDF_REPO_URL, tag)
-    return "%s/tree/%s" % (UMLS2RDF_REPO_URL, commit)
+        return "%s/releases/tag/%s" % (UMLS2RDF_REPO_URL, tag), "umls2rdf %s" % tag
+    name = run_git("describe", "--tags", "--always", "--dirty") or commit
+    return "%s/tree/%s" % (UMLS2RDF_REPO_URL, commit), "umls2rdf %s" % name
 
 def get_umls_release_docs(mrdoc_records):
     """Collect the MRDOC rows the ontology header uses: the UMLS release date
@@ -677,8 +680,8 @@ class UmlsOntology(object):
         # Output of get_umls_release_docs(); None leaves the release date and
         # license out of the header.
         self.umls_docs = None
-        # Output of get_umls2rdf_uri(); None leaves pav:createdWith out.
-        self.tool_uri = None
+        # Output of get_umls2rdf_tool(); None leaves pav:createdWith out.
+        self.tool = None
 
     def mrsab_value(self, idx, default=None):
         if self.mrsab_record and self.mrsab_record[idx]:
@@ -751,9 +754,16 @@ class UmlsOntology(object):
             license_uri, use_guidelines = license_info
             lines.append("dcterms:license <%s>" % license_uri)
             lines.append("cc:useGuidelines %s" % turtle_string(use_guidelines, lang="en"))
-        if self.tool_uri:
-            lines.append("pav:createdWith <%s>" % self.tool_uri)
+        if self.tool:
+            lines.append("pav:createdWith <%s>" % self.tool[0])
         return "".join(" ;\n    %s" % line for line in lines)
+
+    def ontology_tool_label(self):
+        """rdfs:label for the pav:createdWith URL. BioPortal shows the label
+        rather than the URL."""
+        if not self.tool:
+            return ""
+        return "<%s> rdfs:label %s .\n\n" % (self.tool[0], turtle_string(self.tool[1]))
 
     def should_process_current_version(self):
         return self.mrsab_value(MRSAB_IMETA) == conf.UMLS_VERSION
@@ -940,6 +950,7 @@ class UmlsOntology(object):
             source=turtle_string(self.ontology_source()),
             optional_lines=self.ontology_optional_lines(lang_tag)
         )))
+        fout.write(self.ontology_tool_label())
         duplicate_counts = self._empty_duplicate_counts()
         self.terms_written = 0
         self.term_errors = []
@@ -1047,7 +1058,7 @@ def ontologies_over_error_limit(results, max_errors):
     return [r for r in results if r["term_errors"] > max_errors]
 
 def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
-                    property_docs, sem_types, umls_docs=None, tool_uri=None):
+                    property_docs, sem_types, umls_docs=None, tool=None):
     """Write one umls.conf entry. Returns its manifest entry, or None if skipped."""
     alt_uri_code = None
     if ";" in umls_code:
@@ -1062,7 +1073,7 @@ def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
     mrsab = UmlsTable("MRSAB", con)
     ont.mrsab_record = get_mrsab_record(mrsab, umls_code)
     ont.umls_docs = umls_docs
-    ont.tool_uri = tool_uri
+    ont.tool = tool
     if conf_setting("PROCESS_ONLY_CURRENT_UMLS_VERSION") and not ont.should_process_current_version():
         sys.stdout.write("Skipping %s: IMETA=%s, expected %s\n\n" % (
             umls_code,
@@ -1088,7 +1099,7 @@ def export_ontology(con, umls_code, file_out, load_on_field, output_dir,
     }
 
 def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types,
-                      umls_docs=None, tool_uri=None):
+                      umls_docs=None, tool=None):
     """Export every umls.conf entry. One ontology failing (for example a LAT
     with no UMLS_LANGCODE_MAP entry) is logged and the rest still run.
     Returns (results, skipped SABs, failed SABs)."""
@@ -1102,7 +1113,7 @@ def export_ontologies(con, umls_conf, output_dir, property_docs, sem_types,
         try:
             result = export_ontology(con, umls_code, file_out, load_on_field,
                                      output_dir, property_docs, sem_types,
-                                     umls_docs=umls_docs, tool_uri=tool_uri)
+                                     umls_docs=umls_docs, tool=tool)
         except pymysql.err.OperationalError:
             # Lost connection and similar: every later ontology would fail too.
             raise
@@ -1162,7 +1173,7 @@ if __name__ == "__main__":
 
     results, skipped, ontology_failures = export_ontologies(
         con, umls_conf, output_dir, property_docs, sem_types, umls_docs,
-        get_umls2rdf_uri())
+        get_umls2rdf_tool())
     sys.stdout.flush()
 
     max_errors = conf_setting("MAX_TERM_ERRORS")
