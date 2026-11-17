@@ -231,6 +231,11 @@ def render_loader_script(source_path):
                 )
             )
             replaced = True
+        if not replaced and stripped in ("retval=-1", "exit -1"):
+            # NLM's error path exits with -1, which dash (/bin/sh on Ubuntu)
+            # rejects as "Illegal number" and turns into status 2.
+            output_lines.append(line.replace("-1", "1"))
+            replaced = True
         if not replaced:
             output_lines.append(line)
     missing = [key for key in replacements if not any(l.startswith(key + "=") for l in output_lines)]

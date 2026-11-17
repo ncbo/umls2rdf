@@ -155,3 +155,47 @@ class RdfOutputIsReadyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+LOADER_SCRIPT = """\
+#!/bin/sh -f
+MYSQL_HOME=<path>
+user=<user>
+password=<password>
+db_name=<db_name>
+ef=1
+if [ $ef -eq 1 ]
+then
+  retval=-1
+else
+  retval=0
+fi
+exit $retval
+"""
+
+
+class RenderLoaderScriptTest(unittest.TestCase):
+    def render(self, text=LOADER_SCRIPT):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "populate_mysql_db.sh")
+            path.write_text(text)
+            return run_umls_pipeline.render_loader_script(path)
+
+    def test_error_exit_status_is_valid_for_dash(self):
+        rendered = self.render()
+        self.assertIn("  retval=1\n", rendered)
+        self.assertNotIn("-1", rendered)
+
+    def test_rewrites_literal_exit_minus_one(self):
+        rendered = self.render(LOADER_SCRIPT.replace("exit $retval", "exit -1"))
+        self.assertIn("\nexit 1\n", rendered)
+
+    def test_rendered_script_fails_with_status_one_under_sh(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "populate_mysql_db.sh")
+            path.write_text(LOADER_SCRIPT)
+            run_umls_pipeline.patch_loader_script_in_place(path)
+            result = subprocess.run(["sh", path.as_posix()], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
