@@ -37,12 +37,22 @@ PREFIXES = """
 ONTOLOGY_HEADER = Template("""
 <$uri>
     a owl:Ontology ;
+    rdfs:comment $comment ;
     rdfs:label $label ;
     owl:imports <http://www.w3.org/2004/02/skos/core> ;
     owl:versionInfo $versioninfo ;
     dcterms:source $source$optional_lines .
 
 """)
+
+# Credits umls2rdf in every header; BioPortal copies rdfs:comment into the
+# submission's notes. The wording is what earlier releases wrote; it has no
+# umls2rdf version (that goes in pav:createdWith), so it stays the same from
+# one release to the next.
+ONTOLOGY_COMMENT = ("RDF Version of the UMLS ontology %s; "
+                    "converted with the UMLS2RDF tool "
+                    "(https://github.com/ncbo/umls2rdf), "
+                    "developed by the NCBO project.")
 
 STY_URL = "http://bioportal.bioontology.org/ontologies/umls/sty/"
 HAS_STY = "umls:hasSTY"
@@ -998,6 +1008,7 @@ class UmlsOntology(object):
         fout.write(PREFIXES)
         fout.write(ONTOLOGY_HEADER.substitute(dict(
             uri=self.ns,
+            comment=turtle_string(ONTOLOGY_COMMENT % self.ont_code, lang="en"),
             label=turtle_string(self.ontology_label(), lang="en"),
             versioninfo=turtle_string(self.ontology_version()),
             source=turtle_string(self.ontology_source()),

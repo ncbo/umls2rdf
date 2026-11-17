@@ -399,7 +399,10 @@ class UmlsOntologyBehaviorTest(unittest.TestCase):
         self.assertIs(returned, fout)
         written = "".join(writes)
         self.assertIn("<http://example.org/test>", written)
-        self.assertNotIn("rdfs:comment", written)
+        self.assertIn(
+            'rdfs:comment "RDF Version of the UMLS ontology TEST; converted with '
+            'the UMLS2RDF tool (https://github.com/ncbo/umls2rdf), developed by '
+            'the NCBO project."@en ;', written)
         self.assertIn('rdfs:label "Test Ontology Title"@en ;', written)
         self.assertIn('owl:versionInfo "2025-test-version" ;', written)
         self.assertIn('dcterms:source "UMLS 2025AB"', written)

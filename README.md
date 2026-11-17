@@ -124,6 +124,7 @@ copies these into the submission:
 
 <table>
 <tr><th>Header property</th><th>Value from</th><th>BioPortal field</th></tr>
+<tr><td><code>rdfs:comment</code></td><td>a fixed credit for umls2rdf with a link to this repository, the same in every release</td><td>notes</td></tr>
 <tr><td><code>owl:versionInfo</code></td><td><code>MRSAB.SVER</code></td><td>version</td></tr>
 <tr><td><code>dcterms:issued</code></td><td>MRDOC <code>umls.release.date</code> (the UMLS release date)</td><td>released</td></tr>
 <tr><td><code>dcterms:language</code></td><td><code>MRSAB.LAT</code>, as a lexvo ISO 639-1 URI</td><td>naturalLanguage</td></tr>
