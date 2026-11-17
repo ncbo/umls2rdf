@@ -603,9 +603,9 @@ class ObsoleteCodesTest(unittest.TestCase):
         ont.sty_by_cui = collections.defaultdict(list)
         return ont
 
-    def render(self, term):
+    def render(self, term, tree=None):
         with mock.patch.object(conf, "DEDUPE_CLASS_TRIPLES", True, create=True):
-            return term.toRDF(tree=None)
+            return term.toRDF(tree=tree)
 
     def test_only_codes_without_current_names_are_obsolete(self):
         ont = self.make_ontology()
@@ -635,6 +635,26 @@ class ObsoleteCodesTest(unittest.TestCase):
         self.assertNotIn("RET", rdf)
         self.assertNotIn("owl:deprecated", rdf)
         self.assertIn("rdfs:subClassOf <%sPAR>" % self.NS, rdf)
+
+    def test_obsolete_mesh_descriptor_stays_out_of_the_mesh_tree(self):
+        # MeSH parents come from the tree and its roots from MN tree numbers,
+        # not from CHD rels, so build_term's CHD/PAR filter does not cover them.
+        tree = {"D000002": {"D000001"}}
+
+        def mesh_class(is_obsolete):
+            return UmlsClass(
+                self.NS, atoms=[make_code_atom("C1", "A1", "D000002", "Heading", tty="PT")],
+                rels=[], defs=[], atts=[make_code_att("D000002", "MN", "C04")],
+                rank=[], rank_by_tty=collections.defaultdict(list), sty=[],
+                sty_by_cui=collections.defaultdict(list), is_obsolete=is_obsolete)
+
+        current = self.render(mesh_class(False), tree)
+        self.assertIn("rdfs:subClassOf <%sD000001>" % self.NS, current)
+        self.assertIn("rdfs:subClassOf owl:Thing", current)
+
+        obsolete = self.render(mesh_class(True), tree)
+        self.assertIn("owl:deprecated", obsolete)
+        self.assertNotIn("rdfs:subClassOf", obsolete)
 
     def test_load_on_cuis_ignores_the_setting(self):
         ont = UmlsOntology("TEST", self.NS, con=None, load_on_cuis=True, include_obsolete=True)
