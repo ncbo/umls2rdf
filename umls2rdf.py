@@ -38,12 +38,22 @@ ONTOLOGY_HEADER = Template("""
 <$uri>
     a owl:Ontology ;
     rdfs:comment $comment ;
-    rdfs:label $label ;
-    owl:imports <http://www.w3.org/2004/02/skos/core> ;
+    rdfs:label $label ;$imports
     owl:versionInfo $versioninfo ;
     dcterms:source $source$optional_lines .
 
 """)
+
+# The source files import SKOS, as they have since 2012. BioPortal loads
+# UMLS-format submissions as they are and does not follow the import; an
+# OWL-format submission would pull SKOS's own classes in as roots.
+SKOS_IMPORT = "\n    owl:imports <http://www.w3.org/2004/02/skos/core> ;"
+
+# The semantic types file (umls_semantictypes.ttl). The Semantic Network is
+# not an MRSAB source, so its header comes from the UMLS release itself.
+SEMANTIC_TYPES_CODE = "STY"
+SEMANTIC_TYPES_LABEL = "UMLS Semantic Network"
+SEMANTIC_TYPES_FILE = "umls_semantictypes.ttl"
 
 # Credits umls2rdf in every header; BioPortal copies rdfs:comment into the
 # submission's notes. The wording is what earlier releases wrote; it has no
@@ -242,6 +252,59 @@ def flatten(matrix):
 
 def escape(string):
     return string.replace("\\","\\\\").replace('"','\\"')
+
+def format_release_date(raw, ont_code):
+    """MRDOC's UMLS release date (YYYYMMDD) as YYYY-MM-DD, or None (with a
+    warning naming ont_code) when it is missing or malformed."""
+    if not raw:
+        warn(ont_code, "no UMLS release date in MRDOC; "
+             "leaving dcterms:issued out of the header")
+        return None
+    try:
+        return datetime.datetime.strptime(str(raw).strip(), "%Y%m%d").date().isoformat()
+    except ValueError:
+        warn(ont_code, "MRDOC UMLS release date '%s' is not YYYYMMDD; "
+             "leaving dcterms:issued out of the header" % raw)
+        return None
+
+def header_optional_lines(lines):
+    """Header statements, each on its own line after dcterms:source."""
+    return "".join(" ;\n    %s" % line for line in lines)
+
+def semantic_types_header(umls_docs, tool):
+    """owl:Ontology header for the semantic types file. Its version and
+    source are the UMLS release, and its release date is the UMLS release
+    date. There is no license line: the Semantic Network has no MRSAB row,
+    so it has no source restriction level."""
+    # BioPortal's STY versions are upper case (2026AB); conf.py may not be.
+    umls_version = str(conf.UMLS_VERSION).strip().upper()
+    lines = ["skos:altLabel %s" % turtle_string(SEMANTIC_TYPES_CODE, lang="en")]
+    release_date = format_release_date((umls_docs or {}).get("release_date"),
+                                       SEMANTIC_TYPES_CODE)
+    if release_date:
+        lines.append("dcterms:issued %s" % turtle_string(release_date, datatype="xsd:date"))
+    lines.append("dcterms:language <%sen>" % LEXVO_ISO639_1)
+    if tool:
+        lines.append("pav:createdWith %s" % turtle_string(tool))
+    return ONTOLOGY_HEADER.substitute(dict(
+        uri=get_umls_url(SEMANTIC_TYPES_CODE),
+        comment=turtle_string(ONTOLOGY_COMMENT % SEMANTIC_TYPES_CODE, lang="en"),
+        label=turtle_string(SEMANTIC_TYPES_LABEL, lang="en"),
+        imports="",
+        versioninfo=turtle_string(umls_version),
+        source=turtle_string("UMLS %s" % umls_version),
+        optional_lines=header_optional_lines(lines),
+    ))
+
+def write_semantic_types_file(output_dir, sem_types, umls_docs=None, tool=None):
+    """Write umls_semantictypes.ttl: prefixes, header, then the semantic
+    types (generate_semantic_types with roots). Returns its path."""
+    output_file = os.path.join(output_dir, SEMANTIC_TYPES_FILE)
+    with codecs.open(output_file, "w", "utf-8") as semfile:
+        semfile.write(PREFIXES)
+        semfile.write(semantic_types_header(umls_docs, tool))
+        semfile.write(sem_types)
+    return output_file
 
 def turtle_string(value, lang=None, datatype=None):
     value = escape(str(value))
@@ -735,17 +798,8 @@ class UmlsOntology(object):
 
     def ontology_release_date(self):
         """UMLS release date as YYYY-MM-DD, or None (with a warning)."""
-        raw = (self.umls_docs or {}).get("release_date")
-        if not raw:
-            warn(self.ont_code, "no UMLS release date in MRDOC; "
-                 "leaving dcterms:issued out of the header")
-            return None
-        try:
-            return datetime.datetime.strptime(str(raw).strip(), "%Y%m%d").date().isoformat()
-        except ValueError:
-            warn(self.ont_code, "MRDOC UMLS release date '%s' is not YYYYMMDD; "
-                 "leaving dcterms:issued out of the header" % raw)
-            return None
+        return format_release_date((self.umls_docs or {}).get("release_date"),
+                                   self.ont_code)
 
     def ontology_license(self):
         """(license URL, use guidelines text) for the source's restriction
@@ -786,7 +840,7 @@ class UmlsOntology(object):
             lines.append("cc:useGuidelines %s" % turtle_string(use_guidelines, lang="en"))
         if self.tool:
             lines.append("pav:createdWith %s" % turtle_string(self.tool))
-        return "".join(" ;\n    %s" % line for line in lines)
+        return header_optional_lines(lines)
 
     def should_process_current_version(self):
         return self.mrsab_value(MRSAB_IMETA) == conf.UMLS_VERSION
@@ -1010,6 +1064,7 @@ class UmlsOntology(object):
             uri=self.ns,
             comment=turtle_string(ONTOLOGY_COMMENT % self.ont_code, lang="en"),
             label=turtle_string(self.ontology_label(), lang="en"),
+            imports=SKOS_IMPORT,
             versioninfo=turtle_string(self.ontology_version()),
             source=turtle_string(self.ontology_source()),
             optional_lines=self.ontology_optional_lines(lang_tag)
@@ -1110,7 +1165,7 @@ def remove_manifest(output_dir):
 def write_manifest(output_dir, ontologies, skipped):
     manifest = {
         "umls_version": conf.UMLS_VERSION,
-        "semantic_types_file": "umls_semantictypes.ttl",
+        "semantic_types_file": SEMANTIC_TYPES_FILE,
         "ontologies": ontologies,
         "skipped": skipped,
     }
@@ -1217,17 +1272,14 @@ if __name__ == "__main__":
         os.makedirs(output_dir)
     remove_manifest(output_dir)
 
-    sem_types = generate_semantic_types(con,with_roots=True)
-    output_file = os.path.join(output_dir,"umls_semantictypes.ttl")
-    with codecs.open(output_file,"w","utf-8") as semfile:
-        semfile.write(PREFIXES)
-        semfile.write(sem_types)
-        semfile.flush()
-        semfile.close()
-
-    sem_types = generate_semantic_types(con,with_roots=False)
     mrdoc_records = list(UmlsTable("MRDOC", con).scan())
     umls_docs = get_umls_release_docs(mrdoc_records)
+    tool = get_umls2rdf_tool()
+
+    write_semantic_types_file(output_dir, generate_semantic_types(con,with_roots=True),
+                              umls_docs, tool)
+
+    sem_types = generate_semantic_types(con,with_roots=False)
     property_docs = dict()
     for doc_record in mrdoc_records:
         _type = doc_record[MRDOC_TYPE]
@@ -1241,8 +1293,7 @@ if __name__ == "__main__":
         property_docs[_key][_type] = _expl
 
     results, skipped, ontology_failures = export_ontologies(
-        con, umls_conf, output_dir, property_docs, sem_types, umls_docs,
-        get_umls2rdf_tool())
+        con, umls_conf, output_dir, property_docs, sem_types, umls_docs, tool)
     sys.stdout.flush()
 
     max_errors = conf_setting("MAX_TERM_ERRORS")

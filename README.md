@@ -135,6 +135,15 @@ copies these into the submission:
 <tr><td><code>pav:createdWith</code></td><td>"umls2rdf" plus the <code>git describe</code> name of the checkout, for example <code>umls2rdf v1.3.0</code> at a release tag or <code>umls2rdf v1.2.0-8-g3c22d00</code> after it</td><td>usedOntologyEngineeringTool</td></tr>
 </table>
 
+<code>umls_semantictypes.ttl</code> (BioPortal's STY) has a header too. The
+Semantic Network has no <code>MRSAB</code> row, so its header takes the UMLS
+release instead: <code>rdfs:label</code> "UMLS Semantic Network",
+<code>owl:versionInfo</code> and <code>dcterms:source</code> from
+<code>UMLS_VERSION</code>, <code>dcterms:issued</code> from MRDOC,
+<code>dcterms:language</code> English, and <code>pav:createdWith</code>. It has
+no license lines, since there is no source restriction level to read, and,
+unlike the source files, no <code>owl:imports</code> of SKOS.
+
 If the release date or the license data is missing, <code>umls2rdf.py</code>
 logs <code>WARNING &lt;SAB&gt;: ...</code> and leaves those lines out; the
 export still succeeds. Run it from a git checkout so the files record which

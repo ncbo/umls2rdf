@@ -28,6 +28,7 @@ from umls2rdf import (
     read_umls_conf,
     remove_manifest,
     write_manifest,
+    write_semantic_types_file,
 )
 
 
@@ -516,6 +517,98 @@ class Umls2rdfToolTest(unittest.TestCase):
         tool, warnings = self.tool(None)
         self.assertIsNone(tool)
         self.assertIn("WARNING umls2rdf: cannot read the git version", warnings)
+
+
+SEM_TYPES = """<http://purl.bioontology.org/ontology/STY/T051> a owl:Class ;
+\tskos:notation "T051"^^xsd:string ;
+\tskos:prefLabel "Event"@en .
+<http://purl.bioontology.org/ontology/STY/T051> rdfs:subClassOf owl:Thing .
+"""
+
+
+class SemanticTypesFileTest(unittest.TestCase):
+    def write(self, umls_docs=UMLS_DOCS, tool="umls2rdf v9.9.9", umls_version="2025AB"):
+        with tempfile.TemporaryDirectory() as output_dir, \
+                mock.patch.object(conf, "UMLS_VERSION", umls_version), \
+                mock.patch.object(conf, "UMLS_BASE_URI", "http://purl.bioontology.org/ontology/"), \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO) as stderr:
+            path = write_semantic_types_file(output_dir, SEM_TYPES, umls_docs, tool)
+            self.assertEqual(os.path.basename(path), "umls_semantictypes.ttl")
+            with open(path, encoding="utf-8") as f:
+                return f.read(), stderr.getvalue()
+
+    def test_header_gives_umls_release_as_version_and_release_date(self):
+        written, warnings = self.write()
+        header = written.split("<http://purl.bioontology.org/ontology/STY/T051>")[0]
+        self.assertIn("<http://purl.bioontology.org/ontology/STY/>\n    a owl:Ontology ;", header)
+        self.assertIn(
+            'rdfs:comment "RDF Version of the UMLS ontology STY; converted with '
+            'the UMLS2RDF tool (https://github.com/ncbo/umls2rdf), developed by '
+            'the NCBO project."@en ;', header)
+        self.assertIn('rdfs:label "UMLS Semantic Network"@en ;', header)
+        self.assertIn('owl:versionInfo "2025AB" ;', header)
+        self.assertIn('dcterms:source "UMLS 2025AB" ;', header)
+        self.assertIn('skos:altLabel "STY"@en ;', header)
+        self.assertIn('dcterms:issued "2025-11-03"^^xsd:date ;', header)
+        self.assertIn('dcterms:language <http://lexvo.org/id/iso639-1/en> ;', header)
+        self.assertIn('pav:createdWith "umls2rdf v9.9.9" .\n\n', header)
+        self.assertEqual(warnings, "")
+
+    def test_version_is_upper_case(self):
+        written, _ = self.write(umls_version="2025ab")
+        self.assertIn('owl:versionInfo "2025AB" ;', written)
+        self.assertIn('dcterms:source "UMLS 2025AB" ;', written)
+
+    def test_header_has_no_skos_import_or_license(self):
+        written, _ = self.write()
+        self.assertNotIn("owl:imports", written)
+        self.assertNotIn("dcterms:license", written)
+        self.assertNotIn("cc:useGuidelines", written)
+
+    def test_prefixes_then_header_then_semantic_types(self):
+        written, _ = self.write()
+        prefixes = written.index("@prefix owl:")
+        header = written.index("a owl:Ontology")
+        terms = written.index('skos:prefLabel "Event"@en')
+        self.assertLess(prefixes, header)
+        self.assertLess(header, terms)
+        self.assertTrue(written.endswith(SEM_TYPES))
+
+    def test_missing_release_date_warns_and_leaves_issued_out(self):
+        written, warnings = self.write(umls_docs=None, tool=None)
+        self.assertNotIn("dcterms:issued", written)
+        self.assertNotIn("pav:createdWith", written)
+        self.assertIn('dcterms:language <http://lexvo.org/id/iso639-1/en> .\n\n', written)
+        self.assertIn("WARNING STY: no UMLS release date in MRDOC", warnings)
+
+    def test_source_headers_still_import_skos(self):
+        ont = UmlsOntology("TEST", "http://example.org/test", con=None, load_on_cuis=False)
+        ont.loaded = True
+        ont.lang = "eng"
+        ont.tree = None
+        writes = []
+        fout = mock.Mock()
+        fout.write.side_effect = writes.append
+        with mock.patch("umls2rdf.codecs.open", return_value=fout), \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO):
+            ont.write_into("ignored.ttl")
+        self.assertIn('rdfs:label "TEST"@en ;\n'
+                      '    owl:imports <http://www.w3.org/2004/02/skos/core> ;\n'
+                      '    owl:versionInfo', "".join(writes))
+
+    def test_written_file_is_valid_turtle(self):
+        try:
+            import rdflib
+        except ImportError:
+            self.skipTest("rdflib is not installed")
+        written, _ = self.write()
+        graph = rdflib.Graph().parse(data=written, format="turtle")
+        ontology = rdflib.URIRef("http://purl.bioontology.org/ontology/STY/")
+        self.assertEqual(
+            str(graph.value(ontology, rdflib.OWL.versionInfo)), "2025AB")
+        self.assertEqual(
+            str(graph.value(ontology, rdflib.URIRef("http://purl.org/dc/terms/issued"))),
+            "2025-11-03")
 
 
 class UmlsLanguageCodeMapTest(unittest.TestCase):
