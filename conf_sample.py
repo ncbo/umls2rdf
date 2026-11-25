@@ -18,12 +18,14 @@ MYSQL_HOME = "/usr"
 # triples in both load modes.
 DEDUPE_CLASS_TRIPLES = True
 
-# Include the semantic type concepts for each Ontology file generated
+# Add a copy of the semantic type classes to every source file. (The semantic
+# types file, umls_semantictypes.ttl, is written either way.)
 INCLUDE_SEMANTIC_TYPES = True
 
-# Optional: folder with the Semantic Network's SRDEF and SRSTR files. When set,
-# umls_semantictypes.ttl also gets the types' definitions and notes, the
-# relations, and the links between types. See README.
+# Add the types' definitions and notes, and the relations between types, from
+# the UMLS Semantic Network to umls_semantictypes.ttl (STY). Needs SRDEF and
+# SRSTR in SEMANTIC_NETWORK_DIR: run python download_semantic_network.py once.
+ADD_STY_DEFINITIONS_AND_RELATIONS = False
 # SEMANTIC_NETWORK_DIR = "data/semantic-network"
 
 # Define the base URI used to generate the concepts URI

@@ -18,6 +18,8 @@ import pdb
 from functools import reduce
 from itertools import groupby
 
+from download_semantic_network import DEFAULT_SEMANTIC_NETWORK_DIR, SEMANTIC_NETWORK_FILES
+
 try:
     import conf
 except:
@@ -140,7 +142,8 @@ UMLS_LICENSE_NOTICE = (
 CONF_DEFAULTS = {
     "DEDUPE_CLASS_TRIPLES": False,
     "INCLUDE_SEMANTIC_TYPES": True,
-    "SEMANTIC_NETWORK_DIR": None,
+    "ADD_STY_DEFINITIONS_AND_RELATIONS": False,
+    "SEMANTIC_NETWORK_DIR": DEFAULT_SEMANTIC_NETWORK_DIR,
     "PROCESS_ONLY_CURRENT_UMLS_VERSION": False,
     "MAX_TERM_ERRORS": 0,
     # List of sources to export. Relative paths are resolved against the
@@ -1330,8 +1333,16 @@ if __name__ == "__main__":
     sys.stdout.write("Using source list %s (%d entries)\n" % (
         os.path.abspath(umls_conf_path), len(umls_conf)))
     sys.stdout.flush()
-    sn_dir = conf_setting("SEMANTIC_NETWORK_DIR")
-    semantic_network = read_semantic_network(os.path.expanduser(sn_dir)) if sn_dir else ""
+    semantic_network = ""
+    if conf_setting("ADD_STY_DEFINITIONS_AND_RELATIONS"):
+        sn_dir = os.path.expanduser(conf_setting("SEMANTIC_NETWORK_DIR"))
+        missing = [f for f in SEMANTIC_NETWORK_FILES
+                   if not os.path.isfile(os.path.join(sn_dir, f))]
+        if missing:
+            sys.exit("ADD_STY_DEFINITIONS_AND_RELATIONS is on, but %s has no %s. "
+                     "Run python download_semantic_network.py first."
+                     % (sn_dir, " or ".join(missing)))
+        semantic_network = read_semantic_network(sn_dir)
 
     con = __get_connection()
 

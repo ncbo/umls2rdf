@@ -145,13 +145,16 @@ no license lines, since there is no source restriction level to read, and,
 unlike the source files, no <code>owl:imports</code> of SKOS.
 
 By default the semantic types have only their name, code and parent, from
-<code>MRSTY</code>. Set <code>SEMANTIC_NETWORK_DIR</code> in
-<code>conf.py</code> to a folder with the Semantic Network's
-<code>SRDEF</code> and <code>SRSTR</code> files to add the items below. The
-Metathesaurus zip the pipeline downloads does not have them;
-<code>python download_semantic_network.py</code> downloads NLM's
-Semantic Network archive (no API key needed) and saves the two files into
-<code>SEMANTIC_NETWORK_DIR</code>. It adds:
+<code>MRSTY</code>. With <code>ADD_STY_DEFINITIONS_AND_RELATIONS = True</code>
+in <code>conf.py</code>, <code>umls_semantictypes.ttl</code> also gets the
+items below, from the Semantic Network's <code>SRDEF</code> and
+<code>SRSTR</code> files. The Metathesaurus zip the pipeline downloads does not
+have them: run <code>python download_semantic_network.py</code> once. It
+downloads NLM's Semantic Network archive (no API key needed) and saves the two
+files into <code>SEMANTIC_NETWORK_DIR</code> (default
+<code>data/semantic-network</code>). If the setting is on and the files are
+missing, <code>umls2rdf.py</code> stops before connecting to the database.
+The setting adds:
 
 * each type's definition (<code>skos:definition</code>), usage note
   (<code>skos:scopeNote</code>), example (<code>skos:example</code>),

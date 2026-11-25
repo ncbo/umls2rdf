@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Download the UMLS Semantic Network from NLM and save the two files
-umls2rdf.py reads, SRDEF and SRSTR, into SEMANTIC_NETWORK_DIR from conf.py
-(or the folder given as the first argument). No UMLS API key is needed.
+umls2rdf.py reads when ADD_STY_DEFINITIONS_AND_RELATIONS is on, SRDEF and
+SRSTR, into SEMANTIC_NETWORK_DIR from conf.py (default data/semantic-network),
+or into the folder given as the first argument. No UMLS API key is needed.
 
 The Semantic Network has not changed since UMLS 2015AA, so this is needed
 once per server, not once per UMLS release."""
@@ -15,6 +16,7 @@ import urllib.request
 SEMANTIC_NETWORK_URL = ("https://www.nlm.nih.gov/research/umls/knowledge_sources/"
                         "semantic_network/sn_current.tgz")
 SEMANTIC_NETWORK_FILES = ("SRDEF", "SRSTR")
+DEFAULT_SEMANTIC_NETWORK_DIR = "data/semantic-network"
 
 
 def extract_semantic_network(archive, dest):
@@ -38,13 +40,11 @@ def extract_semantic_network(archive, dest):
 
 
 def main():
-    dest = sys.argv[1] if len(sys.argv) > 1 else None
-    if not dest:
+    if len(sys.argv) > 1:
+        dest = sys.argv[1]
+    else:
         import conf
-        dest = getattr(conf, "SEMANTIC_NETWORK_DIR", None)
-    if not dest:
-        sys.exit("Set SEMANTIC_NETWORK_DIR in conf.py or pass a folder: "
-                 "python download_semantic_network.py <folder>")
+        dest = getattr(conf, "SEMANTIC_NETWORK_DIR", DEFAULT_SEMANTIC_NETWORK_DIR)
     dest = os.path.expanduser(dest)
     with urllib.request.urlopen(SEMANTIC_NETWORK_URL, timeout=300) as response:
         archive = io.BytesIO(response.read())
