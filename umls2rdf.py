@@ -981,7 +981,14 @@ class UmlsOntology(object):
             sys.stderr.flush()
         #
         mrsat = UmlsTable("MRSAT",self.con)
-        mrsat_filt = "SAB = '%s' AND CODE IS NOT NULL"%self.ont_code
+        # SAB is the source that asserts the attribute, not the atom's source:
+        # RXNORM gives RXCUIs to MMSL, GS, ... atoms, whose CODE is that
+        # source's code and can match an unrelated RXNORM code
+        # (ncbo/umls2rdf#30). Keep atom attributes on this source's atoms only.
+        mrsat_filt = ("SAB = '%s' AND CODE IS NOT NULL AND (STYPE <> 'AUI' OR "
+                      "EXISTS (SELECT 1 FROM MRCONSO c "
+                      "WHERE c.AUI = MRSAT.METAUI AND c.SAB = MRSAT.SAB))"
+                      % self.ont_code)
         field = MRSAT_CODE if not self.load_on_cuis else MRSAT_CUI
         for att in mrsat.scan(filt=mrsat_filt):
             index = len(self.atts)
