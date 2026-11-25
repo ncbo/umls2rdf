@@ -25,6 +25,7 @@ from umls2rdf import (
     get_umls_conf_path,
     ontologies_over_error_limit,
     parse_umls_conf_line,
+    read_semantic_network,
     read_umls_conf,
     remove_manifest,
     write_manifest,
@@ -609,6 +610,86 @@ class SemanticTypesFileTest(unittest.TestCase):
         self.assertEqual(
             str(graph.value(ontology, rdflib.URIRef("http://purl.org/dc/terms/issued"))),
             "2025-11-03")
+
+
+SRDEF = (
+    "STY|T051|Event|B|A broadly defined activity.||NULL||evnt||\n"
+    "STY|T052|Activity|B1|An operation or series of operations.|Use \"rarely\".|"
+    "Only when no other type applies.|Y|acty||\n"
+    "RL|T166|associated_with|R|Has a significant relationship to.||||AW|associated_with|\n"
+    "RL|T139|functionally_related_to|R3|Related by function.||||FR|functionally_related_to|\n"
+    "RL|T151|affects|R3.1|Produces a direct effect on.||||AF|affected_by|\n"
+    "RL|T186|isa|H|The basic hierarchical link.||||IS|inverse_isa|\n"
+)
+SRSTR = (
+    "Activity|isa|Event|D|\n"
+    "Activity|affects|Event|D|\n"
+    "Event|affects|Activity|B|\n"
+    "affects|isa|functionally_related_to|D|\n"
+    "Event|associated_with||D|\n"
+)
+
+
+class SemanticNetworkTest(unittest.TestCase):
+    def read(self):
+        with tempfile.TemporaryDirectory() as sn_dir, \
+                mock.patch.object(conf, "UMLS_BASE_URI", "http://purl.bioontology.org/ontology/"):
+            for name, data in (("SRDEF", SRDEF), ("SRSTR", SRSTR)):
+                with open(os.path.join(sn_dir, name), "w", encoding="utf-8") as f:
+                    f.write(data)
+            return read_semantic_network(sn_dir)
+
+    def test_types_get_definitions_notes_and_links(self):
+        sty = "http://purl.bioontology.org/ontology/STY/"
+        written = self.read()
+        self.assertIn(
+            '<%sT052> <%sSTN> "B1"^^xsd:string ;\n'
+            '\t<%sABR> "acty"^^xsd:string ;\n'
+            '\t<%sNH> "Y"^^xsd:string ;\n'
+            '\tskos:definition "An operation or series of operations."@en ;\n'
+            '\tskos:scopeNote "Only when no other type applies."@en ;\n'
+            '\tskos:example "Use \\"rarely\\"."@en ;\n'
+            '\t<%sT151> <%sT051> .\n' % ((sty,) * 6), written)
+        # NULL notes are left out, and the blocked link is not written.
+        self.assertIn('<%sT051> <%sSTN> "B"^^xsd:string ;\n'
+                      '\t<%sABR> "evnt"^^xsd:string ;\n'
+                      '\tskos:definition "A broadly defined activity."@en .\n'
+                      % (sty, sty, sty), written)
+
+    def test_relations_are_object_properties(self):
+        sty = "http://purl.bioontology.org/ontology/STY/"
+        written = self.read()
+        self.assertIn('<%sT151> a owl:ObjectProperty ;\n'
+                      '\trdfs:label "affects"@en ;\n'
+                      '\tskos:prefLabel "affects"@en ;\n'
+                      '\tskos:notation "T151"^^xsd:string ;\n'
+                      '\t<%sRTN> "R3.1"^^xsd:string ;\n'
+                      '\tskos:definition "Produces a direct effect on."@en ;\n'
+                      '\trdfs:subPropertyOf <%sT139> .\n' % (sty, sty, sty), written)
+        # A relation that is its own inverse gets no owl:inverseOf.
+        self.assertNotIn("owl:inverseOf", written)
+
+    def test_is_valid_turtle_with_the_semantic_types(self):
+        try:
+            import rdflib
+        except ImportError:
+            self.skipTest("rdflib is not installed")
+        with mock.patch.object(conf, "UMLS_VERSION", "2025AB"), \
+                mock.patch.object(conf, "UMLS_BASE_URI", "http://purl.bioontology.org/ontology/"), \
+                mock.patch("umls2rdf.sys.stderr", new_callable=io.StringIO), \
+                tempfile.TemporaryDirectory() as output_dir:
+            path = write_semantic_types_file(output_dir, SEM_TYPES + self.read(), UMLS_DOCS)
+            graph = rdflib.Graph().parse(path, format="turtle")
+        sty = rdflib.Namespace("http://purl.bioontology.org/ontology/STY/")
+        self.assertEqual(set(graph.objects(sty.T052, sty.T151)), {sty.T051})
+        self.assertEqual(graph.value(sty.T051, rdflib.RDF.type), rdflib.OWL.Class)
+
+    def test_empty_srdef_fails(self):
+        with tempfile.TemporaryDirectory() as sn_dir:
+            for name in ("SRDEF", "SRSTR"):
+                open(os.path.join(sn_dir, name), "w").close()
+            with self.assertRaises(ValueError):
+                read_semantic_network(sn_dir)
 
 
 class UmlsLanguageCodeMapTest(unittest.TestCase):

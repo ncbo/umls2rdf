@@ -18,6 +18,8 @@ import pdb
 from functools import reduce
 from itertools import groupby
 
+from download_semantic_network import DEFAULT_SEMANTIC_NETWORK_DIR, SEMANTIC_NETWORK_FILES
+
 try:
     import conf
 except:
@@ -140,6 +142,8 @@ UMLS_LICENSE_NOTICE = (
 CONF_DEFAULTS = {
     "DEDUPE_CLASS_TRIPLES": False,
     "INCLUDE_SEMANTIC_TYPES": True,
+    "ADD_STY_DEFINITIONS_AND_RELATIONS": False,
+    "SEMANTIC_NETWORK_DIR": DEFAULT_SEMANTIC_NETWORK_DIR,
     "PROCESS_ONLY_CURRENT_UMLS_VERSION": False,
     "MAX_TERM_ERRORS": 0,
     # List of sources to export. Relative paths are resolved against the
@@ -305,6 +309,71 @@ def write_semantic_types_file(output_dir, sem_types, umls_docs=None, tool=None):
         semfile.write(semantic_types_header(umls_docs, tool))
         semfile.write(sem_types)
     return output_file
+
+def read_semantic_network(sn_dir):
+    """Turtle that adds the Semantic Network's own data to the semantic types
+    file, from SRDEF and SRSTR in sn_dir (the NET folder of the full UMLS
+    release, or NLM's Semantic Network download). Each type gets its
+    definition, usage note, example, abbreviation and tree number; the
+    relations become object properties; and each type links to the types
+    SRSTR relates it to (except blocked links, and isa, which is already
+    rdfs:subClassOf)."""
+    url = get_umls_url(SEMANTIC_TYPES_CODE)
+    types, rels = {}, {}
+    with codecs.open(os.path.join(sn_dir, "SRDEF"), "r", "utf-8") as srdef:
+        for line in srdef:
+            f = line.rstrip("\r\n").split("|")
+            if len(f) < 10:
+                continue
+            rec = dict(ui=f[1], name=f[2], tn=f[3], defn=f[4], ex=f[5],
+                       un=f[6], nh=f[7], abr=f[8], inv=f[9])
+            (types if f[0] == "STY" else rels)[rec["name"]] = rec
+    links = collections.defaultdict(set)
+    with codecs.open(os.path.join(sn_dir, "SRSTR"), "r", "utf-8") as srstr:
+        for line in srstr:
+            f = line.rstrip("\r\n").split("|")
+            if len(f) < 4 or f[1] == "isa" or f[3] == "B":
+                continue
+            if f[0] in types and f[1] in rels and f[2] in types:
+                links[types[f[0]]["ui"]].add((rels[f[1]]["ui"], types[f[2]]["ui"]))
+
+    def text(value):
+        return value if value and value != "NULL" else ""
+
+    rel_by_tn = {r["tn"]: r["ui"] for r in rels.values()}
+    out = []
+    for r in sorted(rels.values(), key=lambda r: r["ui"]):
+        lines = ["<%s%s> a owl:ObjectProperty" % (url, r["ui"]),
+                 "rdfs:label %s" % turtle_string(r["name"], lang="en"),
+                 "skos:prefLabel %s" % turtle_string(r["name"], lang="en"),
+                 "skos:notation %s" % turtle_string(r["ui"], datatype="xsd:string"),
+                 "<%sRTN> %s" % (url, turtle_string(r["tn"], datatype="xsd:string"))]
+        if text(r["defn"]):
+            lines.append("skos:definition %s" % turtle_string(r["defn"], lang="en"))
+        # Tree numbers as for the types: R3.1's parent is R3, R3's is R.
+        parent = rel_by_tn.get(r["tn"].rsplit(".", 1)[0] if "." in r["tn"] else r["tn"][:-1])
+        if parent:
+            lines.append("rdfs:subPropertyOf <%s%s>" % (url, parent))
+        if r["inv"] in rels and r["inv"] != r["name"]:
+            lines.append("owl:inverseOf <%s%s>" % (url, rels[r["inv"]]["ui"]))
+        out.append(" ;\n\t".join(lines) + " .\n")
+    for t in sorted(types.values(), key=lambda t: t["ui"]):
+        lines = ["<%s%s> <%sSTN> %s" % (url, t["ui"], url,
+                                        turtle_string(t["tn"], datatype="xsd:string"))]
+        if text(t["abr"]):
+            lines.append("<%sABR> %s" % (url, turtle_string(t["abr"], datatype="xsd:string")))
+        if t["nh"] == "Y":
+            lines.append("<%sNH> %s" % (url, turtle_string("Y", datatype="xsd:string")))
+        for prop, key in (("skos:definition", "defn"), ("skos:scopeNote", "un"),
+                          ("skos:example", "ex")):
+            if text(t[key]):
+                lines.append("%s %s" % (prop, turtle_string(t[key], lang="en")))
+        for rel_ui, target in sorted(links[t["ui"]]):
+            lines.append("<%s%s> <%s%s>" % (url, rel_ui, url, target))
+        out.append(" ;\n\t".join(lines) + " .\n")
+    if not types or not rels:
+        raise ValueError("%s: no semantic types or relations in SRDEF" % sn_dir)
+    return "\n\n" + "\n".join(out)
 
 def turtle_string(value, lang=None, datatype=None):
     value = escape(str(value))
@@ -1264,6 +1333,16 @@ if __name__ == "__main__":
     sys.stdout.write("Using source list %s (%d entries)\n" % (
         os.path.abspath(umls_conf_path), len(umls_conf)))
     sys.stdout.flush()
+    semantic_network = ""
+    if conf_setting("ADD_STY_DEFINITIONS_AND_RELATIONS"):
+        sn_dir = os.path.expanduser(conf_setting("SEMANTIC_NETWORK_DIR"))
+        missing = [f for f in SEMANTIC_NETWORK_FILES
+                   if not os.path.isfile(os.path.join(sn_dir, f))]
+        if missing:
+            sys.exit("ADD_STY_DEFINITIONS_AND_RELATIONS is on, but %s has no %s. "
+                     "Run python download_semantic_network.py first."
+                     % (sn_dir, " or ".join(missing)))
+        semantic_network = read_semantic_network(sn_dir)
 
     con = __get_connection()
 
@@ -1276,7 +1355,8 @@ if __name__ == "__main__":
     umls_docs = get_umls_release_docs(mrdoc_records)
     tool = get_umls2rdf_tool()
 
-    write_semantic_types_file(output_dir, generate_semantic_types(con,with_roots=True),
+    write_semantic_types_file(output_dir,
+                              generate_semantic_types(con,with_roots=True) + semantic_network,
                               umls_docs, tool)
 
     sem_types = generate_semantic_types(con,with_roots=False)
