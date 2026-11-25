@@ -21,6 +21,11 @@ DEDUPE_CLASS_TRIPLES = True
 # Include the semantic type concepts for each Ontology file generated
 INCLUDE_SEMANTIC_TYPES = True
 
+# Optional: folder with the Semantic Network's SRDEF and SRSTR files. When set,
+# umls_semantictypes.ttl also gets the types' definitions and notes, the
+# relations, and the links between types. See README.
+# SEMANTIC_NETWORK_DIR = "data/semantic-network"
+
 # Define the base URI used to generate the concepts URI
 UMLS_BASE_URI = "http://purl.bioontology.org/ontology/"
 

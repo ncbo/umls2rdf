@@ -144,6 +144,28 @@ release instead: <code>rdfs:label</code> "UMLS Semantic Network",
 no license lines, since there is no source restriction level to read, and,
 unlike the source files, no <code>owl:imports</code> of SKOS.
 
+By default the semantic types have only their name, code and parent, from
+<code>MRSTY</code>. Set <code>SEMANTIC_NETWORK_DIR</code> in
+<code>conf.py</code> to a folder with the Semantic Network's
+<code>SRDEF</code> and <code>SRSTR</code> files to add the items below. The
+Metathesaurus zip the pipeline downloads does not have them;
+<code>python download_semantic_network.py</code> downloads NLM's
+Semantic Network archive (no API key needed) and saves the two files into
+<code>SEMANTIC_NETWORK_DIR</code>. It adds:
+
+* each type's definition (<code>skos:definition</code>), usage note
+  (<code>skos:scopeNote</code>), example (<code>skos:example</code>),
+  abbreviation, tree number, and non-human flag
+* the 54 relations as <code>owl:ObjectProperty</code>, with definitions,
+  their hierarchy (<code>rdfs:subPropertyOf</code>) and inverses
+* the links between types that <code>SRSTR</code> asserts, for example
+  Pharmacologic Substance <code>treats</code> Pathologic Function. Blocked
+  links are left out, and <code>isa</code> is already
+  <code>rdfs:subClassOf</code>.
+
+The Semantic Network has not changed since UMLS 2015AA, so one download
+serves every release. The STY classes in the source files are not changed.
+
 If the release date or the license data is missing, <code>umls2rdf.py</code>
 logs <code>WARNING &lt;SAB&gt;: ...</code> and leaves those lines out; the
 export still succeeds. Run it from a git checkout so the files record which
